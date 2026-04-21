@@ -1,0 +1,24 @@
+#!/bin/sh
+### Account information
+#PBS -W group_list=cu_10081 -A cu_10081
+### Number of nodes#PBS -l nodes=1:ppn=40
+### Memory
+#PBS -l mem=180gb
+### Requesting time - format is <days>:<hours>:<minutes>:<seconds>
+#PBS -l walltime=00:72:00:00
+
+module load tools filtlong/0.2.0
+cd /home/projects/cu_10081/projects/m_acridum_pg2021/generateddata/ont_genome_asm
+
+for id in 01 02 03 04 05 06; do
+cd ${id}_Reads
+
+filtlong \
+--min_length 4000 --keep_percent 95 --target_bases 3600000000 \
+${id}_rawReads_no_mt_v7.fq.gz \
+| gzip > ${id}_rawReads_no_mt_v7.m4kb95p80xH.fq.gz
+
+chmod gu=rwx ${id}_rawReads_no_mt_v7.m4kb95p80xH.fq.gz
+
+cd ..
+done
