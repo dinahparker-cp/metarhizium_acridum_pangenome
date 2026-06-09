@@ -1,0 +1,54 @@
+#!/bin/sh
+### Account information
+#PBS -W group_list=cu_10081 -A cu_10081
+### Number of nodes
+#PBS -l nodes=3:ppn=40
+### Memory
+#PBS -l mem=180gb
+### Walltime
+#PBS -l walltime=00:96:00:00
+
+module load tools anaconda3/4.4.0 flye/2.8
+
+cd /home/people/knunie/cu_10081/projects/m_acridum_pg2021/generateddata/ont_genome_asm
+
+###################### Flye assemblies (95p + 40× filtered reads, 10kb overlap)
+
+for id in 01 02 03 04 05 06; do
+
+reads=${id}_Reads/${id}_rawReads_no_mt_v7.m4kb95p40x.fq.gz
+
+for ovl in 10; do
+
+flye \
+  --nano-raw ${reads} \
+  --out-dir ${id}_Flye_95p_${ovl}kbOvl \
+  --genome-size 45m \
+  --min-overlap ${ovl}000 \
+  --threads 120 \
+  --iterations 4
+
+done
+
+done
+
+
+###################### Alternative assemblies (≥10kb reads only)
+
+for id in 01 02 03 04 05 06; do
+
+reads=${id}_Reads/${id}_rawReads_NoMt_m10kb.fq.gz
+
+for ovl in 5 10; do
+
+flye \
+  --nano-raw ${reads} \
+  --out-dir ${id}_Flye_m10kb_${ovl}kbOvl \
+  --genome-size 45m \
+  --min-overlap ${ovl}000 \
+  --threads 120 \
+  --iterations 4
+
+done
+
+done
