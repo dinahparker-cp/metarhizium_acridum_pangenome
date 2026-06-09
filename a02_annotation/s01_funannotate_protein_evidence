@@ -1,0 +1,78 @@
+#!/bin/sh
+### Account information
+#PBS -W group_list=cu_10081 -A cu_10081
+### Number of nodes#PBS -l nodes=1:ppn=20
+### Memory
+#PBS -l mem=64gb
+### Requesting time - format is <days>:<hours>:<minutes>:<seconds>
+#PBS -l walltime=00:48:00:00
+
+module load tools anaconda3/4.4.0 perl/5.30.2 genemark-es/4.68 signalp/4.1c funannotate/1.8.1_py27  #  Funannotate  
+module load trf/4.09 recon/1.08 nseg/20000620 RepeatScout/1.0.5 ncbi-blast/2.10.0+   
+module load ncbi-rmblastn/2.10.0+ hmmer/3.2.1 cd-hit/4.8.1 ninja/1.9.0 mafft/7.453 genometools/1.5.10   
+module load traviswheelerlab/ninja/0.97-cluster_only   
+module load repeatmasker/4.1.1  
+export FUNANNOTATE_DB=/home/projects/cu_10081/data/DB/funannotate_db  
+export GENEMARK_PATH=/services/tools/genemark-es/4.68  
+export PASAHOME=/services/tools/pasapipeline/2.3.3  
+export TRINITYHOME=/services/tools/trinityrnaseq/2.12.0  # 2.8.5  
+export EVM_HOME=/services/tools/evm/1.1.1  
+export AUGUSTUS_CONFIG_PATH=/services/tools/augustus/3.4.0/config  #3.3.3/config  
+export GENEMARK_PATH=/services/tools/genemark-es/4.68
+
+# This is where the work is done
+for i in "KVL_1801" "KVL_1803" "KVL_1806" "KVL_1807" "KVL_1808"
+do
+cd /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/"$i"
+mkdir -p "$i"_v1_H324
+funannotate predict -i /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/"$i"/"$i".masked.fa -o /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/"$i"/"$i"_H
+324_v1 --species "Metarhizium acridum" --isolate "$i"_H324 --protein_evidence /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/GCA_019434415.1_Coph_MacrARSEF324_H1_v1.0_protein.faa --genemark_gtf GeneMark-EP/genemark.gtf --augustus_species fusarium --busco_seed_species fusarium  --repeats2evm --busco_db hypocreales_odb10 --cpus 40
+done
+
+# This is where the work is done
+for i in "KVL_1801" "KVL_1803" "KVL_1806" "KVL_1807" "KVL_1808"
+do
+
+cd /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/"$i"/"$i"_H324_v1
+
+## STEP 4.1 - AntiSMASH ######################################################
+module purge
+module load tools antismash/6.0.0
+mkdir -p antismash
+antismash --taxon 'fungi' --fullhmmer --pfam2go --cpus 40  --genefinding-tool glimmerhmm --output-dir antismash predict_results/Metarhizium_acridum_"$i"_H324.gbk
+
+## STEP 4.2 - InterProScan5  (approx. 2 h.) ###################################
+module purge
+module load tools anaconda3/4.4.0 openjdk/19 perl/5.30.2 signalp/4.1g interproscan/5.57-90.0 
+mkdir -p interproscan
+interproscan.sh -i /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/"$i"/"$i"_H324_v1/predict_results/Metarhizium_acridum_"$i"_H324.proteins.fa --output-dir interproscan -goterms -cpu 40
+
+## STEP 4.3 - EggNog  (approx. 1 h.) #########################################
+module purge 
+module load tools anaconda3/2021.05 hmmer/3.2.1 diamond/2.0.4 eggnog-mapper/2.0.8
+mkdir -p eggnog 
+emapper.py  -m diamond -i /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/"$i"/"$i"_H324_v1/predict_results/Metarhizium_acridum_"$i"_H324.proteins.fa --output_dir eggnog --output eggnog --cpu 40
+cp -r eggnog eggnog_backup
+
+done
+
+# This is where the work is done
+module purge
+module load tools genemark-es/4.68 signalp/5.0b funannotate/1.8.9
+export FUNANNOTATE_DB="/home/projects/cu_10081/data/DB/funannotate_db"
+
+for i in "KVL_1801" "KVL_1803" "KVL_1806" "KVL_1807" "KVL_1808"
+do
+
+cd /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/"$i"/"$i"_H324_v1
+
+funannotate annotate \
+    -i /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/"$i"/"$i"_H324_v1 \
+    -o /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/funannotate_2/"$i"/"$i"_H324_v1/annotations \
+    --eggnog eggnog/eggnog.emapper.annotations \
+    --antismash antismash/Metarhizium_acridum_"$i"_H324.gbk \
+    --iprscan interproscan/Metarhizium_acridum_"$i"_H324.proteins.fa.xml \
+    --busco_db hypocreales_odb10 \
+    --cpus 40
+
+done
