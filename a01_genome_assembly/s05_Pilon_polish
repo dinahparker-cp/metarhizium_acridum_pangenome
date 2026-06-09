@@ -1,0 +1,60 @@
+#!/bin/sh
+### Account information
+#PBS -W group_list=cu_10081 -A cu_10081
+### Number of nodes
+#PBS -l nodes=1:ppn=40
+### Memory
+#PBS -l mem=180gb
+### Requesting time
+#PBS -l walltime=00:72:00:00
+
+## Working directory
+cd /home/people/knunie/cu_10081/projects/m_acridum_pg2021/generateddata/ont_genome_asm
+
+## Load modules
+module load tools bwa/0.7.17 samtools/1.12 jdk/16 openjdk/16 java/1.8.0 jre/1.8.0 pilon/1.23
+
+for id in 01 02 03 04 05 06; do
+
+mkdir -p ${id}_FlyeMedakaPilon/BGI_mapping
+
+### Ensure Medaka output is unzipped if needed
+if [ -f ${id}_FlyeMedaka_r2/consensus.fasta.gz ]; then
+    gunzip ${id}_FlyeMedaka_r2/consensus.fasta.gz
+fi
+
+### Start from Medaka r2 assembly
+cp ${id}_FlyeMedaka_r2/consensus.fasta \
+   ${id}_FlyeMedakaPilon/consensus.r0.fasta
+
+### Iterative Pilon polishing
+for round in 0 1 2 3 4; do
+
+roundPlus=$(echo $round + 1 | bc)
+
+bwa index ${id}_FlyeMedakaPilon/*.r${round}.fasta
+
+KVL_ID=$(awk -v a=$id '$1==a {print $2}' ~/cu_10081/backup/BGI_Macridum/link_table.txt)
+
+bwa mem -t 40 \
+    ${id}_FlyeMedakaPilon/*.r${round}.fasta \
+    ~/cu_10081/backup/BGI_Macridum/${KVL_ID}/*_1.fq.gz \
+    ~/cu_10081/backup/BGI_Macridum/${KVL_ID}/*_2.fq.gz \
+    | samtools sort - -@40 -o ${id}_FlyeMedakaPilon/BGI_mapping/mapping.sorted.bam
+
+samtools index ${id}_FlyeMedakaPilon/BGI_mapping/mapping.sorted.bam
+
+pilon \
+    --genome ${id}_FlyeMedakaPilon/*.r${round}.fasta \
+    --fix snps \
+    --changes \
+    --frags ${id}_FlyeMedakaPilon/BGI_mapping/mapping.sorted.bam \
+    --threads 40 \
+    --output ${id}_FlyeMedakaPilon/pilon.r${roundPlus} \
+    | tee ${id}_FlyeMedakaPilon/pilon.r${roundPlus}.pilon
+
+rm ${id}_FlyeMedakaPilon/BGI_mapping/*
+
+done
+
+done
