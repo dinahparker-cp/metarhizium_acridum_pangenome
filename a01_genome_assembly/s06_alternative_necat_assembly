@@ -1,0 +1,31 @@
+#!/bin/sh
+### Account information
+#PBS -W group_list=cu_10081 -A cu_10081
+#PBS -N necat
+#PBS -e necat.err
+#PBS -o necat.log
+#PBS -m n
+#PBS -l nodes=20:ppn=8
+#PBS -l mem=64gb
+#PBS -l walltime=36:00:00
+#PBS -V
+###PBS -X
+  
+# Go to the directory from where the job was submitted (initial directory is $HOME)
+echo Working directory is $PBS_O_WORKDIR
+cd $PBS_O_WORKDIR
+### Here follows the user commands:
+# Define number of processors
+NPROCS=`wc -l < $PBS_NODEFILE`
+echo This job has allocated $NPROCS nodes
+# Load all required modules for the job
+module load tools perl necat/20210318 
+
+# This is where the work is done
+
+cd /home/projects/cu_10081/projects/m_acridum_pg2022/generateddata/necat
+
+necat.pl correct m_acridum_KVL_1806_nomt_config.txt
+necat.pl assemble m_acridum_KVL_1806_nomt_config.txt
+necat.pl bridge m_acridum_KVL_1806_nomt_config.txt
+
