@@ -6,7 +6,7 @@ All scripts used for figure generation are included in Github. All data can be f
 
 ## DATA & FILE OVERVIEW
 
-**Figure 1**
+### **Figure 1**
 
 1. **r01_map_pangenome_Fig1a.R** <br />
    R script to generate map showcasing the distribution of isolates used in the pangenome study of _M. acridum_, Fig 1a. <br />
@@ -19,7 +19,7 @@ All scripts used for figure generation are included in Github. All data can be f
    - d02a_table_genome_info.txt
 
 
-**Figure 2**
+### **Figure 2**
 
 1. **r01_link_to_genespace_Fig2a.txt** <br />
    Link to evernote describing the methods used to generate the GENESPACE gene synteny file, Fig 2a. <br />
@@ -36,7 +36,7 @@ All scripts used for figure generation are included in Github. All data can be f
    - d06_summary_table_s8.txt
      
 
-**Figure 3**
+### **Figure 3**
 1. **r01_fig3.Rmd** <br />
    R script to generate distribution plots of different gene subsets according to whether they were categorized as core, accessory, or singletons, Fig 3a-f. <br />
    The data required to run this script is:
@@ -45,14 +45,14 @@ All scripts used for figure generation are included in Github. All data can be f
    - d01_KVL_data_subsets.zip (contains all annotation information required for running the script, must be unzipped)
    - d02_MAC_length.txt (contains length information on genes, not included in this figure)
 
-**Figure 4**
+### **Figure 4**
 
 1. **r01_distribution_plots.R** <br />
    R script to generate distribution plots of of where different gene groups are found across the genome, by distance, Fig 4a-f. <br />
    The data required to run this script is:
    - distribution_data.zip (contains all intergenic distance information for each genome assembly, required for plot generation, must be unzipped)
 
-**Figure 5**
+### **Figure 5**
 
 1. **script_shinyCircos_140426.R** <br />
    R script to generate circos plot shocasing mapping of reads to indicate accessory chromosome present on ARSEF 3391, Fig 5a. Additional information can be found in README_circos_plots.txt regarding generation of input files. <br />
@@ -75,7 +75,7 @@ All scripts used for figure generation are included in Github. All data can be f
    - Macridum.filteredRepeats.bed
    - Macridum.filteredRepeats.gff
    
-**Figure 6**
+### **Figure 6**
 
 1. **r01_fig_6.Rmd** <br />
    R script to generate accessory chromosome distributoin plots, to understand the functions that exist on the accessory chromosome. <br />
