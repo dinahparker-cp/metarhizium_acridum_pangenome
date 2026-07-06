@@ -37,6 +37,16 @@ This is the ERDA (data repository host by the University of Copenhagen) sharelin
      
 
 **Figure 3**
+1. **r01_fig3.Rmd** <br />
+   R script to generate distribution plots of different gene subsets according to whether they were categorized as core, accessory, or singletons, Fig 3a-f. <br />
+   The data required to run this script is:
+   - d02_Orthogroups.tsv (from Figure_2 datafiles)
+   - d03_Orthogroups_UnassignedGenes.tsv (from Figure_2 datafiles)
+   - d01_KVL_data_subsets.zip (contains all annotation information required for running the script, must be unzipped)
+   - d02_MAC_length.txt (contains length information on genes, not included in this figure)
+
+
+
 
 **Figure 4**
 
