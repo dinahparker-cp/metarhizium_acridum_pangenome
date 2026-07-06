@@ -45,10 +45,12 @@ This is the ERDA (data repository host by the University of Copenhagen) sharelin
    - d01_KVL_data_subsets.zip (contains all annotation information required for running the script, must be unzipped)
    - d02_MAC_length.txt (contains length information on genes, not included in this figure)
 
-
-
-
 **Figure 4**
+
+1. **r01_distribution_plots.R** <br />
+   R script to generate distribution plots of of where different gene groups are found across the genome, by distance, Fig 4a-f. <br />
+   The data required to run this script is:
+   - distribution_data.zip (contains all intergenic distance information for each genome assembly, required for plot generation, must be unzipped)
 
 **Figure 5**
 
