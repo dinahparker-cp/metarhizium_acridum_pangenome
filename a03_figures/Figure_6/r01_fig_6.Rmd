@@ -1,0 +1,588 @@
+---
+title: "KVL_1801_acc_core"
+output: html_document
+date: "2023-10-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(hrbrthemes)
+library(stringr)
+library(tidyr)
+library(viridis)
+library(ggstatsplot) 
+library(ggstatsplot) 
+library(rstatix)
+library(RVAideMemoire)
+library(GOstats)
+library(AnnotationForge)
+library(GSEABase)
+library(plyr)
+```
+
+Create Metarhizium acridum datatable for orthogroups
+
+```{r}
+unassigned <- read.delim("Figure_2/Orthogroups_UnassignedGenes.tsv")
+orthogroups <- read.delim("Figure_2/Orthogroups.tsv")
+
+all_ortho <- rbind(orthogroups, unassigned)
+
+mac <- all_ortho[c(1,2,18:23)]
+mac[mac == ''] <- NA
+mac_rm <- mac[rowSums(is.na(mac)) != 7, ]  
+
+mac_rm$M.acridum_GCA_000187405.1 <- mac_rm$GCA_000187405.1
+mac_rm$GCA_000187405.1 <- NULL
+
+mac_binary <- mac_rm[ , 2:8]
+
+mac_binary[mac_binary != "*"] = 1
+mac_binary <- mac_binary %>% replace(is.na(.), 0)
+
+mac_binary <- mutate_all(mac_binary, function(x) as.numeric(as.character(x)))
+mac_binary$total <- rowSums(mac_binary)
+
+p <- mac_binary %>% dplyr::count(total, sort = TRUE)
+```
+
+Determine number of singletons in each isolate
+```{r}
+singletons <- mac_binary %>% filter(total == 1) 
+
+mac_singletons <- as.data.frame(colSums(singletons))
+mac_singletons$isolate <- rownames(mac_singletons)
+mac_singletons <- mac_singletons[-8,]
+mac_singletons$count <- mac_singletons$`colSums(singletons)`
+
+mac_singlebar <- ggplot(mac_singletons) +
+  geom_bar(stat = "identity", fill="#8b0000", aes(x=isolate, y=count)) +
+  theme_minimal()
+```
+
+Make tables for core, accessory, and singleton orthogroups 
+```{r}
+ortho_list <- mac_rm$Orthogroup
+mac_binary$Orthogroup <- ortho_list
+
+singletons <- mac_binary %>% filter(total == 1) 
+core <- mac_binary %>% filter(total == 7) 
+accessory <- mac_binary %>% filter(total < 7, total > 1)
+
+single_ortho <- singletons$Orthogroup
+core_ortho <- core$Orthogroup
+acc_ortho <- accessory$Orthogroup
+
+mac_rm$KVL_1801<-gsub("FUN","MAC1",as.character(mac_rm$KVL_1801))
+mac_rm$KVL_1802<-gsub("FUN","MAC2",as.character(mac_rm$KVL_1802))
+mac_rm$KVL_1803<-gsub("FUN","MAC3",as.character(mac_rm$KVL_1803))
+mac_rm$KVL_1806<-gsub("FUN","MAC6",as.character(mac_rm$KVL_1806))
+mac_rm$KVL_1807<-gsub("FUN","MAC7",as.character(mac_rm$KVL_1807))
+mac_rm$KVL_1808<-gsub("FUN","MAC8",as.character(mac_rm$KVL_1808))
+
+mac_rm$proteins <- apply(
+  mac_rm[, c("KVL_1801","KVL_1802","KVL_1803",
+             "KVL_1806","KVL_1807","KVL_1808",
+             "M.acridum_GCA_000187405.1")],
+  1,
+  function(x) paste(na.omit(x), collapse = ",")
+)
+
+mac_proteins <- mac_rm %>%
+  tidyr::separate_rows(proteins, sep = ",")
+
+mac_long <- mac_proteins %>%
+  dplyr::rename(id = proteins) %>%
+  mutate(id = trimws(id)) %>%
+  filter(id != "", !is.na(id))
+
+single_df <- mac_long[mac_long$Orthogroup %in% single_ortho,]
+acc_df <- mac_long[mac_long$Orthogroup %in% acc_ortho,]
+core_df <- mac_long[mac_long$Orthogroup %in% core_ortho,]
+
+#Label
+MAC_length <- read.delim("Figure_3/d02_MAC_length.txt", header=FALSE)
+MAC_length$id <- MAC_length$V1 
+MAC_length$V1 <- NULL
+
+name1 <- "singletons"
+name2 <- "accessory"
+name3 <- "core"
+
+single_df$category <- name1
+acc_df$category <- name2
+core_df$category <- name3
+
+all_MAC <- rbind(single_df, acc_df, core_df)
+
+MAC_merge <- merge(MAC_length,all_MAC,by="id", all.x = TRUE)
+
+MAC_core <- MAC_merge %>% filter(category == "core")
+MAC_acc <- MAC_merge %>% filter(category == "accessory")
+MAC_sin <- MAC_merge %>% filter(category == "singletons")
+
+#remove reference genome from merged datatable
+all_MAC <- rbind(single_df, acc_df, core_df)
+MAC_noref <- all_MAC[!grepl("FUN", all_MAC$id),]
+```
+
+Identify proteins in KVL_1801 that are on accessory scaffolds
+```{r}
+MAC_1801 <- read.delim("/d01d_Metarhizium_acridum_KVL_1801_H324.gff3", header=FALSE, comment.char="#")
+M1801 <- "MAC_1801"
+MAC_1801$genome <- M1801
+MAC_1801$V9 <- gsub("FUN", "MAC1", MAC_1801$V9)
+MAC_1801$V3 <- as.factor(MAC_1801$V3)
+MAC_1801 <- filter(MAC_1801, V3 == "gene")
+
+#extract relevant columns from merged gff3 file
+MAC_1801 <- as.data.frame(cbind(MAC_1801$V1, MAC_1801$V4, MAC_1801$V5, MAC_1801$V9, MAC_1801$genome))
+MAC_1801$V4 <- gsub("ID=", "", MAC_1801$V4)
+MAC_1801$V4 <- gsub(";.*","", MAC_1801$V4)
+
+#Add column detailing accessory or core chromosomes
+MAC_1801$compartment <- NA
+MAC_1801$compartment <- replace_na("core_chr")
+MAC_1801$compartment[MAC_1801$V1=="chr_8"] <- "acc_chr"
+MAC_1801$compartment[MAC_1801$V1=="chr_9"] <- "acc_chr"
+MAC_1801$compartment[MAC_1801$V1=="chr_11"] <- "acc_chr"
+MAC_1801$compartment[MAC_1801$V1=="chr_12"] <- "acc_chr"
+```
+
+Create a table merging KVL 1801 and MAC_noref
+```{r}
+MAC_1801_comp <- MAC_noref
+MAC_1801_comp$genome <- MAC_1801_comp$id
+MAC_1801_comp$genome <- gsub("_.*", "", MAC_1801_comp$genome)
+
+MAC_1801_comp <- MAC_1801_comp %>%
+  filter(genome == "MAC1")
+MAC_1801_comp$id <- gsub("-T1", "", MAC_1801_comp$id)
+
+MAC_1801_total <- MAC_1801 %>% left_join(MAC_1801_comp, 
+                                          by=c("V4" = "id"))
+#there are some NAs because these represent tRNAs which are not included in the fasta file but are in the gff3 file
+names(MAC_1801_total)[names(MAC_1801_total) == "V4"] <- "id"
+
+MAC_1801_total$category <- factor(MAC_1801_total$category, levels = c("core", "accessory", "singletons"))
+```
+
+
+Now we'll make bar graphs for the different genome compartments
+
+Core, singleton, accessory
+```{r}
+#make summary table
+summary_comp_1801 <- MAC_1801_total %>% group_by(compartment, category) %>% dplyr::tally()
+comp_total_1801 <- summary_comp_1801 %>% group_by(compartment) %>% 
+  dplyr::summarise(n = sum(n))
+total <- "total"
+comp_total_1801$category <- total
+
+comp_all_1801 <- rbind(summary_comp_1801, comp_total_1801)
+
+comp_pivot <- comp_all_1801 %>% pivot_wider(names_from = category, values_from = n)
+comp_pivot$acc_percent <- (comp_pivot$accessory/comp_pivot$total) * 100
+comp_pivot$sin_percent <- (comp_pivot$singletons/comp_pivot$total) * 100
+comp_pivot$core_percent <- (comp_pivot$core/comp_pivot$total) * 100
+
+#ggstat plot
+gg_bar_comp <- ggbarstats(data = MAC_1801_total, x = category, y = compartment) + labs(caption = NULL) 
+gg_bar_comp
+
+comp_all <- subset(comp_all_1801, category!= "total")
+comp_all$category <- factor(comp_all$category, levels = c("singletons", "accessory", "core"))
+comp_all = ddply(comp_all, .(compartment), transform, percent = n/sum(n) * 100)
+
+cols_2 <- c("#8b0000","#ff0000","#ff9d9d")
+comp_plot <- ggplot(comp_all, aes(x = compartment, y = n, fill = category)) +
+  geom_bar(position="fill", stat="identity", alpha = 0.8) +
+  scale_fill_manual(values = cols_2) +
+  labs(x = "ARSEF 3391", y = "Proportion of genome (%)") +
+    theme_minimal()
+
+comp_plot
+
+```
+
+
+Secretome
+```{r}
+#import secretome file
+sec_1801 <- read.delim("d01e_annotations.secretome.txt", header=FALSE)
+sec_1801[, 2:3] <- NULL
+
+#change name of column for merging
+names(sec_1801)[names(sec_1801) == "V1"] <- "id"
+sec_1801$id <- gsub("-T1", "", sec_1801$id)
+
+#add column
+sec_1801$sec <- "sec"
+
+#merge tables
+sec_MAC <- merge(MAC_1801_total, sec_1801, by="id", all.x = TRUE)
+sec_MAC$sec <- sec_MAC$sec %>% replace_na("None")
+
+#make summary table
+summary_sec_1801 <- sec_MAC %>% group_by(compartment, sec) %>% tally()
+sec_total_1801 <- summary_sec_1801 %>% group_by(compartment) %>% 
+  dplyr::summarise(n = sum(n))
+total <- "total"
+sec_total_1801$sec <- total
+
+sec_all_1801 <- rbind(summary_sec_1801, sec_total_1801)
+
+sec_pivot <- sec_all_1801 %>% pivot_wider(names_from = sec, values_from = n)
+sec_pivot[is.na(sec_pivot)] = 0
+sec_pivot$percent <- (sec_pivot$sec/sec_pivot$total) * 100
+
+#make plot 
+cols_1 <- c("#ACE1AF", "#00A86B")
+
+sec_plot <- ggplot(sec_pivot, aes(x=compartment, y=percent, fill = compartment)) +
+  geom_bar(stat = "identity", alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = cols_1) +
+    theme_minimal() +
+    labs (x = "ARSEF 3391", y = "Secretome proteins (%)") 
+    #geom_label(aes(label=percent), fill = "white")
+sec_plot
+
+```
+
+Effectors 
+```{r}
+#import effector dataset
+eff_1801 <- read.delim("d01f_eff_F_1801.txt", header=FALSE, comment.char="#")
+eff_1801$V4 <- gsub("Y.*", "None", eff_1801$V4)
+eff_1801<-eff_1801[!(eff_1801$V4=="None"),]
+eff_1801[, 2:5] <- NULL
+eff_1801$V1 <- gsub("FUN", "MAC1", eff_1801$V1)
+eff_1801$V1 <- gsub("-T1", "", eff_1801$V1)
+names(eff_1801)[names(eff_1801) == "V1"] <- "id"
+
+#add column
+eff_1801$eff <- "eff"
+
+#merge label column
+eff_MAC <- merge(MAC_1801_total, eff_1801, by="id", all.x = TRUE)
+eff_MAC$eff <- eff_MAC$eff %>% replace_na("None")
+
+#make summary table
+summary_eff_1801 <- eff_MAC %>% group_by(compartment, eff) %>% tally()
+eff_total_1801 <- summary_eff_1801 %>% group_by(compartment) %>% 
+  dplyr::summarise(n = sum(n))
+total <- "total"
+eff_total_1801$eff <- total
+
+eff_all_1801 <- rbind(summary_eff_1801, eff_total_1801)
+
+eff_pivot <- eff_all_1801 %>% pivot_wider(names_from = eff, values_from = n)
+eff_pivot[is.na(eff_pivot)] = 0
+eff_pivot$percent <- (eff_pivot$eff/eff_pivot$total) * 100
+
+#ggstat plot
+gg_bar_eff <- ggbarstats(data = eff_MAC, x = eff, y = compartment) + labs(caption = NULL) 
+gg_bar_eff
+
+#make plot 
+cols_1 <- c("#ACE1AF", "#00A86B")
+
+eff_plot <- ggplot(eff_pivot, aes(x=compartment, y=percent, fill = compartment)) +
+  geom_bar(stat = "identity", alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = cols_1) +
+    theme_minimal() +
+    labs (x = "ARSEF 3391", y = "Effector proteins (%)") 
+    #geom_label(aes(label=percent), fill = "white")
+eff_plot
+```
+
+MEROPS
+```{r}
+#import dataset
+merops_1801 <- read.delim("d01g_annotations.merops.txt", header=FALSE)
+names(merops_1801)[names(merops_1801) == "V1"] <- "id"
+merops_1801[ , 2:3] <- NULL
+
+merops_1801$merops <- "merops"
+
+merops_1801$id <- gsub("-T1", "", merops_1801$id)
+
+#merge label column
+merops_MAC <- merge(MAC_1801_total, merops_1801, by="id", all.x = TRUE)
+merops_MAC$merops <- merops_MAC$merops %>% replace_na("None")
+
+#make summary table
+summary_merops_1801 <- merops_MAC %>% group_by(compartment, merops) %>% tally()
+merops_total_1801 <- summary_merops_1801 %>% group_by(compartment) %>% 
+  dplyr::summarise(n = sum(n))
+total <- "total"
+merops_total_1801$merops <- total
+
+merops_all_1801 <- rbind(summary_merops_1801, merops_total_1801)
+
+merops_pivot <- merops_all_1801 %>% pivot_wider(names_from = merops, values_from = n)
+merops_pivot[is.na(merops_pivot)] = 0
+merops_pivot$percent <- (merops_pivot$merops/merops_pivot$total) * 100
+
+#ggstat plot
+gg_bar_merops <- ggbarstats(data = merops_MAC, x = merops, y = compartment) + labs(caption = NULL) 
+gg_bar_merops
+
+#make plot 
+cols_1 <- c("#ACE1AF", "#00A86B")
+
+merops_plot <- ggplot(merops_pivot, aes(x=compartment, y=percent, fill = compartment)) +
+  geom_bar(stat = "identity", alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = cols_1) +
+    theme_minimal() +
+    labs (x = "ARSEF 3391", y = "Merops proteins (%)") 
+    #geom_label(aes(label=percent), fill = "white")
+merops_plot
+```
+Secondary metabolites
+```{r}
+anti_1801 <- read.delim("d01h_annotations.antismash.clusters.txt", header=FALSE)
+names(anti_1801)[names(anti_1801) == "V1"] <- "id"
+anti_1801[ , 2:3] <- NULL
+
+anti_1801$anti <- "anti"
+
+anti_1801$id <- gsub("-T1", "", anti_1801$id)
+
+#merge label column
+anti_MAC <- merge(MAC_1801_total, anti_1801, by="id", all.x = TRUE)
+anti_MAC$anti <- anti_MAC$anti %>% replace_na("None")
+
+#make summary table
+summary_anti_1801 <- anti_MAC %>% group_by(compartment, anti) %>% tally()
+anti_total_1801 <- summary_anti_1801 %>% group_by(compartment) %>% 
+  dplyr::summarise(n = sum(n))
+total <- "total"
+anti_total_1801$anti <- total
+
+anti_all_1801 <- rbind(summary_anti_1801, anti_total_1801)
+
+anti_pivot <- anti_all_1801 %>% pivot_wider(names_from = anti, values_from = n)
+anti_pivot[is.na(anti_pivot)] = 0
+anti_pivot$percent <- (anti_pivot$anti/anti_pivot$total) * 100
+
+#ggstat plot
+gg_bar_anti <- ggbarstats(data = anti_MAC, x = anti, y = compartment) + labs(caption = NULL) 
+gg_bar_anti
+
+#make plot 
+cols_1 <- c("#ACE1AF", "#00A86B")
+
+anti_plot <- ggplot(anti_pivot, aes(x=compartment, y=percent, fill = compartment)) +
+  geom_bar(stat = "identity", alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = cols_1) +
+    theme_minimal() +
+    labs (x = "ARSEF 3391", y = "Secondary metabolite proteins (%)") 
+    #geom_label(aes(label=percent), fill = "white")
+anti_plot
+
+```
+Conserved protein domains
+
+```{r}
+pfam_1801 <- read.delim("d01i_annotations.pfam.txt", header=FALSE)
+ipr_1801 <- read.delim("d01j_annotations.iprscan.txt", header=FALSE)
+pfam_1801[ , 2:3] <- NULL
+ipr_1801[ , 2:3] <- NULL
+con_1801 <- rbind(pfam_1801, ipr_1801)
+con_1801 <- distinct(con_1801, V1, .keep_all = TRUE)
+
+con_1801$con <- "con"
+
+names(con_1801)[names(con_1801) == "V1"] <- "id"
+con_1801$id <- gsub("-T1", "", con_1801$id)
+
+#merge label column
+con_MAC <- merge(MAC_1801_total, con_1801, by="id", all.x = TRUE)
+con_MAC$con <- con_MAC$con %>% replace_na("None")
+
+#make summary table
+summary_con_1801 <- con_MAC %>% group_by(compartment, con) %>% tally()
+con_total_1801 <- summary_con_1801 %>% group_by(compartment) %>% 
+  dplyr::summarise(n = sum(n))
+total <- "total"
+con_total_1801$con <- total
+
+con_all_1801 <- rbind(summary_con_1801, con_total_1801)
+
+con_pivot <- con_all_1801 %>% pivot_wider(names_from = con, values_from = n)
+con_pivot[is.na(con_pivot)] = 0
+con_pivot$percent <- (con_pivot$con/con_pivot$total) * 100
+
+#ggstat plot
+gg_bar_con <- ggbarstats(data = con_MAC, x = con, y = compartment) + labs(caption = NULL) 
+gg_bar_con
+
+#make plot 
+cols_1 <- c("#ACE1AF", "#00A86B")
+
+con_plot <- ggplot(con_pivot, aes(x=compartment, y=percent, fill = compartment)) +
+  geom_bar(stat = "identity", alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = cols_1) +
+    theme_minimal() +
+    labs (x = "ARSEF 3391", y = "Conserved protein domains (%)") 
+    #geom_label(aes(label=percent), fill = "white")
+con_plot
+```
+CAZYME
+
+```{r}
+caz_1801 <- read.delim("d01k_annotations.dbCAN.txt", header=FALSE)
+caz_1801[ , 2:3] <- NULL
+names(caz_1801)[names(caz_1801) == "V1"] <- "id"
+caz_1801$caz <- "caz"
+
+caz_1801$id <- gsub("-T1", "", caz_1801$id)
+
+#merge label column
+caz_MAC <- merge(MAC_1801_total, caz_1801, by="id", all.x = TRUE)
+caz_MAC$caz <- caz_MAC$caz %>% replace_na("None")
+
+#make summary table
+summary_caz_1801 <- caz_MAC %>% group_by(compartment, caz) %>% tally()
+caz_total_1801 <- summary_caz_1801 %>% group_by(compartment) %>% 
+  dplyr::summarise(n = sum(n))
+total <- "total"
+caz_total_1801$caz <- total
+
+caz_all_1801 <- rbind(summary_caz_1801, caz_total_1801)
+
+caz_pivot <- caz_all_1801 %>% pivot_wider(names_from = caz, values_from = n)
+caz_pivot[is.na(caz_pivot)] = 0
+caz_pivot$percent <- (caz_pivot$caz/caz_pivot$total) * 100
+
+#ggstat plot
+gg_bar_caz <- ggbarstats(data = caz_MAC, x = caz, y = compartment) + labs(caption = NULL) 
+gg_bar_caz
+
+#make plot 
+cols_1 <- c("#ACE1AF", "#00A86B")
+
+caz_plot <- ggplot(caz_pivot, aes(x=compartment, y=percent, fill = compartment)) +
+  geom_bar(stat = "identity", alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = cols_1) +
+    theme_minimal() +
+    labs (x = "ARSEF 3391", y = "CAZyme proteins (%)") 
+    #geom_label(aes(label=percent), fill = "white")
+caz_plot
+```
+Transmembrane proteins
+```{r}
+#KVL_1801
+pho_1801 <- read.delim("d01l_KVL_1801_phobius.results.txt", header=FALSE)
+pho_1801_t <- pho_1801 %>% filter(V3 == "Y")
+pho_1801_s <- pho_1801 %>% filter(V2 > 0)
+pho_1801_t[ , 2:4] <- NULL
+pho_1801_s[ , 2:4] <- NULL
+
+tmhmm_1801 <- read.delim("d01m_KVL_1801_tmhmm.results", header=FALSE)
+tmhmm_1801 <- separate(data = tmhmm_1801, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1801 <- tmhmm_1801 %>% filter(value > 0)
+tmhmm_1801[ , 2:7] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+tran_1801 <- rbind(pho_1801_t, tmhmm_1801)
+tran_1801 <- distinct(tran_1801, V1, .keep_all = TRUE)
+
+tran_1801$tran <- "tran"
+names(tran_1801)[names(tran_1801) == "V1"] <- "id"
+tran_1801$id <- gsub("-T1", "", tran_1801$id)
+
+#merge label column
+tran_MAC <- merge(MAC_1801_total, tran_1801, by="id", all.x = TRUE)
+tran_MAC$tran <- tran_MAC$tran %>% replace_na("None")
+
+#make summary table
+summary_tran_1801 <- tran_MAC %>% group_by(compartment, tran) %>% tally()
+tran_total_1801 <- summary_tran_1801 %>% group_by(compartment) %>% 
+  dplyr::summarise(n = sum(n))
+total <- "total"
+tran_total_1801$tran <- total
+
+tran_all_1801 <- rbind(summary_tran_1801, tran_total_1801)
+
+tran_pivot <- tran_all_1801 %>% pivot_wider(names_from = tran, values_from = n)
+tran_pivot[is.na(tran_pivot)] = 0
+tran_pivot$percent <- (tran_pivot$tran/tran_pivot$total) * 100
+
+#ggstat plot
+gg_bar_tran <- ggbarstats(data = tran_MAC, x = tran, y = compartment) + labs(caption = NULL) 
+gg_bar_tran
+
+#make plot 
+cols_1 <- c("#ACE1AF", "#00A86B")
+
+tran_plot <- ggplot(tran_pivot, aes(x=compartment, y=percent, fill = compartment)) +
+  geom_bar(stat = "identity", alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = cols_1) +
+    theme_minimal() +
+    labs (x = "ARSEF 3391", y = "Transmembrane proteins (%)") 
+    #geom_label(aes(label=percent), fill = "white")
+tran_plot
+```
+Find unclassified proteins
+```{r}
+names(sec_1801)[names(sec_1801) == "sec"] <- "type"
+names(eff_1801)[names(eff_1801) == "eff"] <- "type"
+names(merops_1801)[names(merops_1801) == "merops"] <- "type"
+names(anti_1801)[names(anti_1801) == "anti"] <- "type"
+names(con_1801)[names(con_1801) == "con"] <- "type"
+names(caz_1801)[names(caz_1801) == "caz"] <- "type"
+names(tran_1801)[names(tran_1801) == "tran"] <- "type"
+
+all_prot <- rbind(sec_1801, eff_1801, merops_1801, anti_1801, con_1801, caz_1801, tran_1801)
+all_prot$type <- NULL
+all_prot <- all_prot %>% distinct()
+all_prot$type <- "id"
+
+unclass_MAC <- merge(MAC_1801_total, all_prot, by="id", all.x = TRUE)
+unclass_MAC$type <- unclass_MAC$type %>% replace_na("None")
+
+#make summary table
+summary_unclass_1801 <- unclass_MAC %>% group_by(compartment, type) %>% tally()
+unclass_total_1801 <- summary_unclass_1801 %>% group_by(compartment) %>% 
+  dplyr::summarise(n = sum(n))
+total <- "total"
+unclass_total_1801$type <- total
+
+unclass_all_1801 <- rbind(summary_unclass_1801, unclass_total_1801)
+
+unclass_pivot <- unclass_all_1801 %>% pivot_wider(names_from = type, values_from = n)
+unclass_pivot[is.na(unclass_pivot)] = 0
+unclass_pivot$percent <- (unclass_pivot$None/unclass_pivot$total) * 100
+
+#ggstat plot
+gg_bar_unclass <- ggbarstats(data = unclass_MAC, x = type, y = compartment) + labs(caption = NULL) 
+gg_bar_unclass
+
+#make plot 
+cols_1 <- c("#ACE1AF", "#00A86B")
+
+unclass_plot <- ggplot(unclass_pivot, aes(x=compartment, y=percent, fill = compartment)) +
+  geom_bar(stat = "identity", alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = cols_1) +
+    theme_minimal() +
+    labs (x = "ARSEF 3391", y = "Unclassified proteins (%)") 
+    #geom_label(aes(label=percent), fill = "white")
+unclass_plot
+
+```
+
+Data subset 
+```{r}
+MAC_1801_sub <- as.data.frame(cbind(MAC_1801_total$id, MAC_1801_total$compartment))
+
+MAC_1801_core <- filter(MAC_1801_sub, V2 == "core_chr")
+MAC_1801_acc <- filter(MAC_1801_sub, V2 == "acc_chr")
+
+MAC_1801_core$V2 <- NULL
+MAC_1801_acc$V2 <- NULL
+
+```
