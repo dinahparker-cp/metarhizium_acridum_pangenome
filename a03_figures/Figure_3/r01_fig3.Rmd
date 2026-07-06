@@ -1,0 +1,1462 @@
+---
+title: "MAC gene categories"
+output: html_document
+date: "2023-01-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(hrbrthemes)
+library(stringr)
+library(tidyr)
+library(viridis)
+library(ggstatsplot) 
+library(ggstatsplot) 
+library(rstatix)
+library(RVAideMemoire)
+library(GOstats)
+library(AnnotationForge)
+library(GSEABase)
+```
+
+Create Metarhizium acridum datatable for orthogroups
+
+```{r}
+unassigned <- read.delim("Figure_2/d03_Orthogroups_UnassignedGenes.tsv")
+orthogroups <- read.delim("Figure_2/d02_Orthogroups.tsv")
+
+all_ortho <- rbind(orthogroups, unassigned)
+
+mac <- all_ortho[c(1,2,18:23)]
+mac[mac == ''] <- NA
+mac_rm <- mac[rowSums(is.na(mac)) != 7, ]  
+
+mac_rm$M.acridum_GCA_000187405.1 <- mac_rm$GCA_000187405.1
+mac_rm$GCA_000187405.1 <- NULL
+
+mac_binary <- mac_rm[ , 2:8]
+
+mac_binary[mac_binary != "*"] = 1
+mac_binary <- mac_binary %>% replace(is.na(.), 0)
+
+mac_binary <- mutate_all(mac_binary, function(x) as.numeric(as.character(x)))
+mac_binary$total <- rowSums(mac_binary)
+
+p <- mac_binary %>% dplyr::count(total, sort = TRUE)
+```
+
+
+Make histogram of distribution 
+```{r}
+p$total <- as.factor(p$total)
+p$n <- as.numeric(p$n)
+
+cols <- c("#8b0000","#ff0000", "#ff0000", "#ff0000", "#ff0000", "#ff0000", "#ff9d9d")
+
+bar_ortho <- ggplot(p) +
+  geom_bar(stat = "identity", aes(x=total, y=n, fill=total)) +
+  scale_fill_manual(values = cols) +
+  theme_minimal()
+bar_ortho
+```
+
+
+Determine number of singletons in each isolate
+```{r}
+singletons <- mac_binary %>% filter(total == 1) 
+
+mac_singletons <- as.data.frame(colSums(singletons))
+mac_singletons$isolate <- rownames(mac_singletons)
+mac_singletons <- mac_singletons[-8,]
+mac_singletons$count <- mac_singletons$`colSums(singletons)`
+
+mac_singlebar <- ggplot(mac_singletons) +
+  geom_bar(stat = "identity", fill="#8b0000", aes(x=isolate, y=count)) +
+  theme_minimal()
+
+mac_singlebar
+```
+
+
+Make tables for core, accessory, and singleton orthogroups 
+```{r}
+ortho_list <- mac_rm$Orthogroup
+mac_binary$Orthogroup <- ortho_list
+
+singletons <- mac_binary %>% filter(total == 1) 
+core <- mac_binary %>% filter(total == 7) 
+accessory <- mac_binary %>% filter(total < 7, total > 1)
+
+single_ortho <- singletons$Orthogroup
+core_ortho <- core$Orthogroup
+acc_ortho <- accessory$Orthogroup
+
+mac_rm$KVL_1801<-gsub("FUN","MAC1",as.character(mac_rm$KVL_1801))
+mac_rm$KVL_1802<-gsub("FUN","MAC2",as.character(mac_rm$KVL_1802))
+mac_rm$KVL_1803<-gsub("FUN","MAC3",as.character(mac_rm$KVL_1803))
+mac_rm$KVL_1806<-gsub("FUN","MAC6",as.character(mac_rm$KVL_1806))
+mac_rm$KVL_1807<-gsub("FUN","MAC7",as.character(mac_rm$KVL_1807))
+mac_rm$KVL_1808<-gsub("FUN","MAC8",as.character(mac_rm$KVL_1808))
+
+mac_rm$proteins <- apply(
+  mac_rm[, c("KVL_1801","KVL_1802","KVL_1803",
+             "KVL_1806","KVL_1807","KVL_1808",
+             "M.acridum_GCA_000187405.1")],
+  1,
+  function(x) paste(na.omit(x), collapse = ",")
+)
+
+mac_proteins <- mac_rm %>%
+  tidyr::separate_rows(proteins, sep = ",")
+
+mac_long <- mac_proteins %>%
+  dplyr::rename(id = proteins) %>%
+  mutate(id = trimws(id)) %>%
+  filter(id != "", !is.na(id))
+
+single_df <- mac_long[mac_long$Orthogroup %in% single_ortho,]
+acc_df <- mac_long[mac_long$Orthogroup %in% acc_ortho,]
+core_df <- mac_long[mac_long$Orthogroup %in% core_ortho,]
+```
+
+Determine percentage of each genome that is accessory
+```{r}
+mac_acc <- mac_binary %>% filter(total < 7)
+
+acc_proteins <- as.data.frame(colSums(mac_acc[, (1:7)]))
+
+```
+
+Determine length of genes in each compartment
+```{r}
+MAC_length <- read.delim("d02_MAC_length.txt", header=FALSE)
+MAC_length$id <- MAC_length$V1 
+MAC_length$V1 <- NULL
+
+name1 <- "singleton"
+name2 <- "accessory"
+name3 <- "core"
+
+single_df$category <- name1
+acc_df$category <- name2
+core_df$category <- name3
+
+all_MAC <- rbind(single_df, acc_df, core_df)
+
+MAC_merge <- merge(MAC_length,all_MAC,by="id", all.x = TRUE)
+
+MAC_core <- MAC_merge %>% filter(category == "core")
+MAC_acc <- MAC_merge %>% filter(category == "accessory")
+MAC_sin <- MAC_merge %>% filter(category == "singleton")
+
+ggplot(MAC_core, aes(x=V2)) +
+  geom_histogram(bins=100)
+ggplot(MAC_acc, aes(x=V2)) +
+  geom_histogram(bins=100)
+ggplot(MAC_sin, aes(x=V2)) +
+  geom_histogram(bins=100)
+
+summary(MAC_core$V2)
+IQR(MAC_core$V2)
+core_min <- 266.0-329
+core_max <- 595+329
+MAC_core_mod <- MAC_core %>% filter(V2 <= core_max)
+
+summary(MAC_acc$V2)
+IQR(MAC_acc$V2)
+acc_min <- 149-313
+acc_max <- 462+313
+MAC_acc_mod <- MAC_acc %>% filter(V2 <= acc_max)
+
+summary(MAC_sin$V2)
+IQR(MAC_sin$V2)
+sin_min <- 128-199.75
+sin_max <- 327.8+199.75
+MAC_sin_mod <- MAC_sin %>% filter(V2 <= sin_max)
+
+MAC_IQR <- rbind(MAC_core_mod, MAC_acc_mod)
+MAC_IQR <- rbind(MAC_IQR, MAC_sin_mod)
+
+```
+
+boxplot of gene sizes
+```{r}
+MAC_IQR$category <- as.factor(MAC_IQR$category)
+MAC_IQR$category <- factor(MAC_IQR$category, levels = c("core", "accessory", "singleton"))
+
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+gene_size <- MAC_IQR %>%
+  ggplot(aes(x=category, y=V2, fill=category)) +
+    geom_boxplot(width=0.8, alpha=0.7) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+
+gene_size
+
+```
+
+Geom_flat_violin function
+```{r}
+#function 1
+geom_flat_violin <- function(mapping = NULL, data = NULL, stat = "ydensity",
+                        position = "dodge", trim = TRUE, scale = "area",
+                        show.legend = NA, inherit.aes = TRUE, ...) {
+  layer(
+    data = data,
+    mapping = mapping,
+    stat = stat,
+    geom = GeomFlatViolin,
+    position = position,
+    show.legend = show.legend,
+    inherit.aes = inherit.aes,
+    params = list(
+      trim = trim,
+      scale = scale,
+      ...
+    )
+  )
+}
+
+#function 2
+GeomFlatViolin <-
+  ggproto("GeomFlatViolin", Geom,
+          setup_data = function(data, params) {
+            data$width <- data$width %||%
+              params$width %||% (resolution(data$x, FALSE) * 0.9)
+
+            # ymin, ymax, xmin, and xmax define the bounding rectangle for each group
+            data %>%
+              group_by(group) %>%
+              mutate(ymin = min(y),
+                     ymax = max(y),
+                     xmin = x,
+                     xmax = x + width / 2)
+
+          },
+
+          draw_group = function(data, panel_scales, coord) {
+            # Find the points for the line to go all the way around
+            data <- transform(data, xminv = x,
+                              xmaxv = x + violinwidth * (xmax - x))
+
+            # Make sure it's sorted properly to draw the outline
+            newdata <- rbind(plyr::arrange(transform(data, x = xminv), y),
+                             plyr::arrange(transform(data, x = xmaxv), -y))
+
+            # Close the polygon: set first and last point the same
+            # Needed for coord_polar and such
+            newdata <- rbind(newdata, newdata[1,])
+
+            ggplot2:::ggname("geom_flat_violin", GeomPolygon$draw_panel(newdata, panel_scales, coord))
+          },
+
+          draw_key = draw_key_polygon,
+
+          default_aes = aes(weight = 1, colour = "grey20", fill = "white", size = 0.5,
+                            alpha = NA, linetype = "solid"),
+
+          required_aes = c("x", "y")
+)
+
+#function 3
+"%||%" <- function(a, b) {
+  if (!is.null(a)) a else b
+}
+```
+
+
+```{r}
+test <-  ggplot(MAC_IQR, aes(x=category, y=V2, fill=category)) +
+    geom_flat_violin(scale = "count", trim = FALSE, width=2) + 
+    scale_fill_viridis(discrete = TRUE) +
+    stat_summary(fun.data = mean_sdl, fun.args = list(mult = 1), geom = "pointrange", color = "red") + 
+    geom_dotplot(binaxis = "y", dotsize = 5, stackdir = "down", binwidth = 0.3, position = position_nudge(-0.025)) + 
+    theme_ipsum() +
+    theme(
+      legend.position = "none"
+    ) + 
+    ylab("value")
+ 
+test
+```
+
+Kruskal-Wallis test
+```{r}
+kruskal.test(V2 ~ category, data = MAC_IQR)
+
+pairwise.wilcox.test(MAC_IQR$V2, MAC_IQR$category,
+                 p.adjust.method = "BH")
+```
+
+
+Make bar charts for determining functions of genes in different genome compartments. We start with the secretome. These files can be found within the folder, d01_KVL_data_subsets
+```{r}
+#upload secretome files
+KVL_1801_sec <- read.delim("/d01_KVL_data_subsets/KVL_1801/annotations.secretome.txt", header=FALSE)
+KVL_1802_sec <- read.delim("/d01_KVL_data_subsets/KVL_1802/annotations.secretome.txt", header=FALSE)
+KVL_1803_sec <- read.delim("/d01_KVL_data_subsets/KVL_1803/annotations.secretome.txt", header=FALSE)
+KVL_1806_sec <- read.delim("/d01_KVL_data_subsets/KVL_1806/annotations.secretome.txt", header=FALSE)
+KVL_1807_sec <- read.delim("/d01_KVL_data_subsets/KVL_1807/annotations.secretome.txt", header=FALSE)
+KVL_1808_sec <- read.delim("/d01_KVL_data_subsets/KVL_1808/annotations.secretome.txt", header=FALSE)
+
+#remove column 2
+KVL_1801_sec$V2 <- NULL
+KVL_1802_sec$V2 <- NULL
+KVL_1803_sec$V2 <- NULL
+KVL_1806_sec$V2 <- NULL
+KVL_1807_sec$V2 <- NULL
+KVL_1808_sec$V2 <- NULL
+
+#remove reference genome from merged datatable
+MAC_noref <- all_MAC[!grepl("FUN", all_MAC$id),]
+MAC_noref <- MAC_noref %>%
+  select(-KVL_1801, -KVL_1802, -KVL_1803,
+         -KVL_1806, -KVL_1807, -KVL_1808,
+         -`M.acridum_GCA_000187405.1`)
+
+#change name of column for merging
+names(KVL_1801_sec)[names(KVL_1801_sec) == "V1"] <- "id"
+names(KVL_1801_sec)[names(KVL_1801_sec) == "V3"] <- "K1"
+sec_MAC <- merge(MAC_noref,KVL_1801_sec, by="id", all.x = TRUE)
+
+names(KVL_1802_sec)[names(KVL_1802_sec) == "V1"] <- "id"
+names(KVL_1802_sec)[names(KVL_1802_sec) == "V3"] <- "K2"
+sec_MAC <- merge(sec_MAC, KVL_1802_sec, by="id", all.x = TRUE)
+
+names(KVL_1803_sec)[names(KVL_1803_sec) == "V1"] <- "id"
+names(KVL_1803_sec)[names(KVL_1803_sec) == "V3"] <- "K3"
+sec_MAC <- merge(sec_MAC, KVL_1803_sec, by="id", all.x = TRUE)
+
+names(KVL_1806_sec)[names(KVL_1806_sec) == "V1"] <- "id"
+names(KVL_1806_sec)[names(KVL_1806_sec) == "V3"] <- "K6"
+sec_MAC <- merge(sec_MAC, KVL_1806_sec, by="id", all.x = TRUE)
+
+names(KVL_1807_sec)[names(KVL_1807_sec) == "V1"] <- "id"
+names(KVL_1807_sec)[names(KVL_1807_sec) == "V3"] <- "K7"
+sec_MAC <- merge(sec_MAC, KVL_1807_sec, by="id", all.x = TRUE)
+
+names(KVL_1808_sec)[names(KVL_1808_sec) == "V1"] <- "id"
+names(KVL_1808_sec)[names(KVL_1808_sec) == "V3"] <- "K8"
+sec_MAC <- merge(sec_MAC, KVL_1808_sec, by="id", all.x = TRUE)
+
+sec_merge <- sec_MAC
+sec_merge$sec <- paste(sec_merge$K1, "", sec_merge$K2, "", sec_merge$K3, "", sec_merge$K6, "", sec_merge$K7, "", sec_merge$K8)
+sec_merge <- sec_merge %>%
+  select(-matches("^K[123678]$"))
+sec_merge$sec<-gsub("NA","",as.character(sec_merge$sec))
+sec_merge$sec<-gsub(" ","",as.character(sec_merge$sec))
+
+sec_merge$sec<-gsub("SEC.*","SEC",as.character(sec_merge$sec))
+sec_merge["sec"][sec_merge["sec"] == ''] <- "None"
+
+#Remove protein id, and remove duplicate rows
+#Take the secreted category of each orthogroup depending on what occurs most often
+sec_merge$id <- NULL
+
+sec_unique <- sec_merge %>%
+  count(Orthogroup, category, sec, sort = TRUE) %>%
+  group_by(Orthogroup) %>%
+  summarise(first = sec[1], category = category[1])
+
+#the number of singletons has decreased, because we removed the reference from the analysis- everything else is the same
+sec_summary <- sec_unique %>% group_by(category, first) %>% tally()
+
+sec_total <- sec_summary %>% group_by(category) %>% 
+  summarise(n = sum(n))
+total <- "total"
+sec_total$first <- total
+
+sec_all <- rbind(sec_summary, sec_total)
+
+sec_pivot <- sec_all %>% pivot_wider(names_from = first, values_from = n)
+sec_pivot$percent <- (sec_pivot$SEC/sec_pivot$total) * 100
+
+sec_pivot$category <- factor(sec_pivot$category, levels = c("core", "accessory", "singleton"))
+
+#ggstat plot
+gg_bar_sec <- ggbarstats(data = sec_unique, x = first, y = category) + labs(caption = NULL) 
+gg_bar_sec
+#make plot 
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+sec_plot <- ggplot(sec_pivot, aes(x=category, y=percent, fill =category)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+sec_plot
+
+#chi square test
+sec_test <- chisq.test(table(sec_unique$category, sec_unique$first))
+sec_test
+pairwise_prop_test(table(sec_unique$category, sec_unique$first), p.adjust.method = "BH")
+
+```
+
+
+Try with a different secretome method, as employed by funfinder. Not sure if this method is better, but it is more "strict" since it uses input from phobius and tmhmm to determine if some of the predicted secretome proteins are actually transmembrane (based on predictions of the number of transmembrane helices in each protein). The results are different, but until I have a better understanding of these programs, I think I will stick with the funannotate version. 
+```{r}
+#KVL_1801
+pho_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/KVL_1801_phobius.results.txt", header=FALSE)
+pho_1801_t <- pho_1801 %>% filter(V3 == "Y")
+pho_1801_s <- pho_1801 %>% filter(V2 > 0)
+pho_1801_t[ , 2:4] <- NULL
+pho_1801_s[ , 2:4] <- NULL
+
+tmhmm_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/KVL_1801_tmhmm.results", header=FALSE)
+tmhmm_1801 <- separate(data = tmhmm_1801, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1801 <- tmhmm_1801 %>% filter(value > 0)
+tmhmm_1801[ , 2:7] <- NULL
+
+KVL_1801_sec <- read.delim("/d01_KVL_data_subsets/KVL_1801/annotations.secretome.txt", header=FALSE)
+KVL_1801_sec[ , 2:4] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+sec_1801 <- rbind(KVL_1801_sec, pho_1801_s)
+sec_1801 <- distinct(sec_1801, V1, .keep_all = TRUE)
+
+#remove proteins from tmhmm (transmembrane) and phobius transmembrane protiens
+sec_1801 <- as.data.frame(sec_1801[!(sec_1801$V1 %in% tmhmm_1801$V1),])
+names(sec_1801)[names(sec_1801) == "sec_1801[!(sec_1801$V1 %in% tmhmm_1801$V1), ]"] <- "V1"
+sec_1801 <- as.data.frame(sec_1801[!(sec_1801$V1 %in% pho_1801_t$V1),])
+names(sec_1801)[names(sec_1801) == "sec_1801[!(sec_1801$V1 %in% pho_1801_t$V1), ]"] <- "V1"
+
+#KVL_1802
+pho_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/KVL_1802_phobius.results.txt", header=FALSE)
+pho_1802_t <- pho_1802 %>% filter(V3 == "Y")
+pho_1802_s <- pho_1802 %>% filter(V2 > 0)
+pho_1802_t[ , 2:4] <- NULL
+pho_1802_s[ , 2:4] <- NULL
+
+tmhmm_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/KVL_1802_tmhmm.results", header=FALSE)
+tmhmm_1802 <- separate(data = tmhmm_1802, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1802 <- tmhmm_1802 %>% filter(value > 0)
+tmhmm_1802[ , 2:7] <- NULL
+
+KVL_1802_sec <- read.delim("/d01_KVL_data_subsets/KVL_1802/annotations.secretome.txt", header=FALSE)
+KVL_1802_sec[ , 2:4] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+sec_1802 <- rbind(KVL_1802_sec, pho_1802_s)
+sec_1802 <- distinct(sec_1802, V1, .keep_all = TRUE)
+
+#remove proteins from tmhmm (transmembrane) and phobius transmembrane protiens
+sec_1802 <- as.data.frame(sec_1802[!(sec_1802$V1 %in% tmhmm_1802$V1),])
+names(sec_1802)[names(sec_1802) == "sec_1802[!(sec_1802$V1 %in% tmhmm_1802$V1), ]"] <- "V1"
+sec_1802 <- as.data.frame(sec_1802[!(sec_1802$V1 %in% pho_1802_t$V1),])
+names(sec_1802)[names(sec_1802) == "sec_1802[!(sec_1802$V1 %in% pho_1802_t$V1), ]"] <- "V1"
+
+#KVL_1803
+pho_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/KVL_1803_phobius.results.txt", header=FALSE)
+pho_1803_t <- pho_1803 %>% filter(V3 == "Y")
+pho_1803_s <- pho_1803 %>% filter(V2 > 0)
+pho_1803_t[ , 2:4] <- NULL
+pho_1803_s[ , 2:4] <- NULL
+
+tmhmm_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/KVL_1803_tmhmm.results", header=FALSE)
+tmhmm_1803 <- separate(data = tmhmm_1803, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1803 <- tmhmm_1803 %>% filter(value > 0)
+tmhmm_1803[ , 2:7] <- NULL
+
+KVL_1803_sec <- read.delim("/d01_KVL_data_subsets/KVL_1803/annotations.secretome.txt", header=FALSE)
+KVL_1803_sec[ , 2:4] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+sec_1803 <- rbind(KVL_1803_sec, pho_1803_s)
+sec_1803 <- distinct(sec_1803, V1, .keep_all = TRUE)
+
+#remove proteins from tmhmm (transmembrane) and phobius transmembrane protiens
+sec_1803 <- as.data.frame(sec_1803[!(sec_1803$V1 %in% tmhmm_1803$V1),])
+names(sec_1803)[names(sec_1803) == "sec_1803[!(sec_1803$V1 %in% tmhmm_1803$V1), ]"] <- "V1"
+sec_1803 <- as.data.frame(sec_1803[!(sec_1803$V1 %in% pho_1803_t$V1),])
+names(sec_1803)[names(sec_1803) == "sec_1803[!(sec_1803$V1 %in% pho_1803_t$V1), ]"] <- "V1"
+
+#KVL_1806
+pho_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/KVL_1806_phobius.results.txt", header=FALSE)
+pho_1806_t <- pho_1806 %>% filter(V3 == "Y")
+pho_1806_s <- pho_1806 %>% filter(V2 > 0)
+pho_1806_t[ , 2:4] <- NULL
+pho_1806_s[ , 2:4] <- NULL
+
+tmhmm_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/KVL_1806_tmhmm.results", header=FALSE)
+tmhmm_1806 <- separate(data = tmhmm_1806, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1806 <- tmhmm_1806 %>% filter(value > 0)
+tmhmm_1806[ , 2:7] <- NULL
+
+KVL_1806_sec <- read.delim("/d01_KVL_data_subsets/KVL_1806/annotations.secretome.txt", header=FALSE)
+KVL_1806_sec[ , 2:4] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+sec_1806 <- rbind(KVL_1806_sec, pho_1806_s)
+sec_1806 <- distinct(sec_1806, V1, .keep_all = TRUE)
+
+#remove proteins from tmhmm (transmembrane) and phobius transmembrane protiens
+sec_1806 <- as.data.frame(sec_1806[!(sec_1806$V1 %in% tmhmm_1806$V1),])
+names(sec_1806)[names(sec_1806) == "sec_1806[!(sec_1806$V1 %in% tmhmm_1806$V1), ]"] <- "V1"
+sec_1806 <- as.data.frame(sec_1806[!(sec_1806$V1 %in% pho_1806_t$V1),])
+names(sec_1806)[names(sec_1806) == "sec_1806[!(sec_1806$V1 %in% pho_1806_t$V1), ]"] <- "V1"
+
+#KVL_1807
+pho_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/KVL_1807_phobius.results.txt", header=FALSE)
+pho_1807_t <- pho_1807 %>% filter(V3 == "Y")
+pho_1807_s <- pho_1807 %>% filter(V2 > 0)
+pho_1807_t[ , 2:4] <- NULL
+pho_1807_s[ , 2:4] <- NULL
+
+tmhmm_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/KVL_1807_tmhmm.results", header=FALSE)
+tmhmm_1807 <- separate(data = tmhmm_1807, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1807 <- tmhmm_1807 %>% filter(value > 0)
+tmhmm_1807[ , 2:7] <- NULL
+
+KVL_1807_sec <- read.delim("/d01_KVL_data_subsets/KVL_1807/annotations.secretome.txt", header=FALSE)
+KVL_1807_sec[ , 2:4] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+sec_1807 <- rbind(KVL_1807_sec, pho_1807_s)
+sec_1807 <- distinct(sec_1807, V1, .keep_all = TRUE)
+
+#remove proteins from tmhmm (transmembrane) and phobius transmembrane protiens
+sec_1807 <- as.data.frame(sec_1807[!(sec_1807$V1 %in% tmhmm_1807$V1),])
+names(sec_1807)[names(sec_1807) == "sec_1807[!(sec_1807$V1 %in% tmhmm_1807$V1), ]"] <- "V1"
+sec_1807 <- as.data.frame(sec_1807[!(sec_1807$V1 %in% pho_1807_t$V1),])
+names(sec_1807)[names(sec_1807) == "sec_1807[!(sec_1807$V1 %in% pho_1807_t$V1), ]"] <- "V1"
+
+#KVL_1808
+pho_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/KVL_1808_phobius.results.txt", header=FALSE)
+pho_1808_t <- pho_1808 %>% filter(V3 == "Y")
+pho_1808_s <- pho_1808 %>% filter(V2 > 0)
+pho_1808_t[ , 2:4] <- NULL
+pho_1808_s[ , 2:4] <- NULL
+
+tmhmm_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/KVL_1808_tmhmm.results", header=FALSE)
+tmhmm_1808 <- separate(data = tmhmm_1808, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1808 <- tmhmm_1808 %>% filter(value > 0)
+tmhmm_1808[ , 2:7] <- NULL
+
+KVL_1808_sec <- read.delim("/d01_KVL_data_subsets/KVL_1808/annotations.secretome.txt", header=FALSE)
+KVL_1808_sec[ , 2:4] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+sec_1808 <- rbind(KVL_1808_sec, pho_1808_s)
+sec_1808 <- distinct(sec_1808, V1, .keep_all = TRUE)
+
+#remove proteins from tmhmm (transmembrane) and phobius transmembrane protiens
+sec_1808 <- as.data.frame(sec_1808[!(sec_1808$V1 %in% tmhmm_1808$V1),])
+names(sec_1808)[names(sec_1808) == "sec_1808[!(sec_1808$V1 %in% tmhmm_1808$V1), ]"] <- "V1"
+sec_1808 <- as.data.frame(sec_1808[!(sec_1808$V1 %in% pho_1808_t$V1),])
+names(sec_1808)[names(sec_1808) == "sec_1808[!(sec_1808$V1 %in% pho_1808_t$V1), ]"] <- "V1"
+
+#Normal analysis
+sec <- "sec"
+sec_1801$sec_1 <- sec
+sec_1802$sec_2 <- sec
+sec_1803$sec_3 <- sec
+sec_1806$sec_6 <- sec
+sec_1807$sec_7 <- sec
+sec_1808$sec_8 <- sec
+
+names(sec_1801)[names(sec_1801) == "V1"] <- "id"
+names(sec_1802)[names(sec_1802) == "V1"] <- "id"
+names(sec_1803)[names(sec_1803) == "V1"] <- "id"
+names(sec_1806)[names(sec_1806) == "V1"] <- "id"
+names(sec_1807)[names(sec_1807) == "V1"] <- "id"
+names(sec_1808)[names(sec_1808) == "V1"] <- "id"
+
+sec_MAC <- merge(MAC_noref, sec_1801, by="id", all.x = TRUE)
+sec_MAC <- merge(sec_MAC, sec_1802, by="id", all.x = TRUE)
+sec_MAC <- merge(sec_MAC, sec_1803, by="id", all.x = TRUE)
+sec_MAC <- merge(sec_MAC, sec_1806, by="id", all.x = TRUE)
+sec_MAC <- merge(sec_MAC, sec_1807, by="id", all.x = TRUE)
+sec_MAC <- merge(sec_MAC, sec_1808, by="id", all.x = TRUE)
+
+sec_MAC$sec <- paste(sec_MAC$sec_1, "", sec_MAC$sec_2, "", sec_MAC$sec_3, "", sec_MAC$sec_6, "", sec_MAC$sec_7, "", sec_MAC$sec_8)
+sec_MAC[ , 4:9] <- NULL
+sec_MAC$sec<-gsub("NA","",as.character(sec_MAC$sec))
+sec_MAC$sec<-gsub(" ","",as.character(sec_MAC$sec))
+
+sec_MAC["sec"][sec_MAC["sec"] == ''] <- "None"
+
+#Remove protein id, and remove duplicate rows
+#Take the secreted category of each orthogroup depending on what occurs most often
+sec_MAC$id <- NULL
+
+sec_unique <- sec_MAC %>%
+  count(Orthogroup, category, sec, sort = TRUE) %>%
+  group_by(Orthogroup) %>%
+  summarise(first = sec[1], category = category[1])
+
+#the number of singletons has decreased, because we removed the reference from the analysis- everything else is the same
+sec_summary <- sec_unique %>% group_by(category, first) %>% tally()
+
+sec_total <- sec_summary %>% group_by(category) %>% 
+  summarise(n = sum(n))
+total <- "total"
+sec_total$first <- total
+
+sec_all <- rbind(sec_summary, sec_total)
+
+sec_pivot <- sec_all %>% pivot_wider(names_from = first, values_from = n)
+sec_pivot$percent <- (sec_pivot$sec/sec_pivot$total) * 100
+
+sec_pivot$category <- factor(sec_pivot$category, levels = c("core", "accessory", "singleton"))
+
+#ggstat plot
+gg_bar_sec <- ggbarstats(data = sec_unique, x = first, y = category) + labs(caption = NULL) 
+gg_bar_sec
+#make plot 
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+sec_plot <- ggplot(sec_pivot, aes(x=category, y=percent, fill =category)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+sec_plot
+
+#chi square test
+sec_test <- chisq.test(table(sec_unique$category, sec_unique$first))
+sec_test
+pairwise_prop_test(table(sec_unique$category, sec_unique$first), p.adjust.method = "BH")
+
+#Fisher's test
+fisher.test(table(sec_unique$category, sec_unique$first))
+fisher.multcomp(table(sec_unique$category, sec_unique$first))
+
+#export sec files for effector p analysis 
+sec_1801$sec_1 <- NULL
+sec_1802$sec_2 <- NULL
+sec_1803$sec_3 <- NULL
+sec_1806$sec_6 <- NULL
+sec_1807$sec_7 <- NULL
+sec_1808$sec_8 <- NULL
+
+#write.table(sec_1801, "/Users/mbs625/Documents/PhD/Pangenome/Analyses/funfinder/sec_1801.txt",row.names=FALSE, col.names = FALSE, sep="\t", quote = FALSE)
+#write.table(sec_1802, "/Users/mbs625/Documents/PhD/Pangenome/Analyses/funfinder/sec_1802.txt",row.names=FALSE, col.names = FALSE, sep="\t", quote = FALSE)
+#write.table(sec_1803, "/Users/mbs625/Documents/PhD/Pangenome/Analyses/funfinder/sec_1803.txt",row.names=FALSE, col.names = FALSE, sep="\t", quote = FALSE)
+#write.table(sec_1806, "/Users/mbs625/Documents/PhD/Pangenome/Analyses/funfinder/sec_1806.txt",row.names=FALSE, col.names = FALSE, sep="\t", quote = FALSE)
+#write.table(sec_1807, "/Users/mbs625/Documents/PhD/Pangenome/Analyses/funfinder/sec_1807.txt",row.names=FALSE, col.names = FALSE, sep="\t", quote = FALSE)
+#write.table(sec_1808, "/Users/mbs625/Documents/PhD/Pangenome/Analyses/funfinder/sec_1808.txt",row.names=FALSE, col.names = FALSE, sep="\t", quote = FALSE)
+
+```
+
+
+Perform the same analysis for effectors, but be sure to use effectors as predicted with the fungal method. 
+```{r}
+eff_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/eff_F_1801.txt", header=FALSE, comment.char="#")
+eff_1801$V4 <- gsub("Y.*", "None", eff_1801$V4)
+eff_1801<-eff_1801[!(eff_1801$V4=="None"),]
+eff_1801[, 2:5] <- NULL
+eff_1801$V1 <- gsub("FUN", "MAC1", eff_1801$V1)
+
+eff_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/eff_F_1802.txt", header=FALSE, comment.char="#")
+eff_1802$V4 <- gsub("Y.*", "None", eff_1802$V4)
+eff_1802<-eff_1802[!(eff_1802$V4=="None"),]
+eff_1802[, 2:5] <- NULL
+eff_1802$V1 <- gsub("FUN", "MAC2", eff_1802$V1)
+
+eff_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/eff_F_1803.txt", header=FALSE, comment.char="#")
+eff_1803$V4 <- gsub("Y.*", "None", eff_1803$V4)
+eff_1803<-eff_1803[!(eff_1803$V4=="None"),]
+eff_1803[, 2:5] <- NULL
+eff_1803$V1 <- gsub("FUN", "MAC3", eff_1803$V1)
+
+eff_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/eff_F_1806.txt", header=FALSE, comment.char="#")
+eff_1806$V4 <- gsub("Y.*", "None", eff_1806$V4)
+eff_1806<-eff_1806[!(eff_1806$V4=="None"),]
+eff_1806[, 2:5] <- NULL
+eff_1806$V1 <- gsub("FUN", "MAC6", eff_1806$V1)
+
+eff_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/eff_F_1807.txt", header=FALSE, comment.char="#")
+eff_1807$V4 <- gsub("Y.*", "None", eff_1807$V4)
+eff_1807<-eff_1807[!(eff_1807$V4=="None"),]
+eff_1807[, 2:5] <- NULL
+eff_1807$V1 <- gsub("FUN", "MAC7", eff_1807$V1)
+
+eff_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/eff_F_1808.txt", header=FALSE, comment.char="#")
+eff_1808$V4 <- gsub("Y.*", "None", eff_1808$V4)
+eff_1808<-eff_1808[!(eff_1808$V4=="None"),]
+eff_1808[, 2:5] <- NULL
+eff_1808$V1 <- gsub("FUN", "MAC8", eff_1808$V1)
+
+#change name of column for merging
+names(eff_1801)[names(eff_1801) == "V1"] <- "id"
+names(eff_1802)[names(eff_1802) == "V1"] <- "id"
+names(eff_1803)[names(eff_1803) == "V1"] <- "id"
+names(eff_1806)[names(eff_1806) == "V1"] <- "id"
+names(eff_1807)[names(eff_1807) == "V1"] <- "id"
+names(eff_1808)[names(eff_1808) == "V1"] <- "id"
+
+eff <- "eff"
+eff_1801$eff_1 <- eff
+eff_1802$eff_2 <- eff
+eff_1803$eff_3 <- eff
+eff_1806$eff_6 <- eff
+eff_1807$eff_7 <- eff
+eff_1808$eff_8 <- eff
+
+eff_MAC <- merge(MAC_noref, eff_1801, by="id", all.x = TRUE)
+eff_MAC <- merge(eff_MAC, eff_1802, by="id", all.x = TRUE)
+eff_MAC <- merge(eff_MAC, eff_1803, by="id", all.x = TRUE)
+eff_MAC <- merge(eff_MAC, eff_1806, by="id", all.x = TRUE)
+eff_MAC <- merge(eff_MAC, eff_1807, by="id", all.x = TRUE)
+eff_MAC <- merge(eff_MAC, eff_1808, by="id", all.x = TRUE)
+
+eff_MAC$eff <- paste(eff_MAC$eff_1, "", eff_MAC$eff_2, "", eff_MAC$eff_3, "", eff_MAC$eff_6, "", eff_MAC$eff_7, "", eff_MAC$eff_8)
+eff_MAC[ , 4:9] <- NULL
+eff_MAC$eff<-gsub("NA","",as.character(eff_MAC$eff))
+eff_MAC$eff<-gsub(" ","",as.character(eff_MAC$eff))
+
+eff_MAC["eff"][eff_MAC["eff"] == ''] <- "None"
+
+#Remove protein id, and remove duplicate rows
+#Take the secreted category of each orthogroup depending on what occurs most often
+eff_MAC$id <- NULL
+
+eff_unique <- eff_MAC %>%
+  count(Orthogroup, category, eff, sort = TRUE) %>%
+  group_by(Orthogroup) %>%
+  summarise(first = eff[1], category = category[1])
+
+#the number of singletons has decreased, because we removed the reference from the analysis- everything else is the same
+eff_summary <- eff_unique %>% group_by(category, first) %>% tally()
+
+eff_total <- eff_summary %>% group_by(category) %>% 
+  summarise(n = sum(n))
+total <- "total"
+eff_total$first <- total
+
+eff_all <- rbind(eff_summary, eff_total)
+
+eff_pivot <- eff_all %>% pivot_wider(names_from = first, values_from = n)
+eff_pivot$percent <- (eff_pivot$eff/eff_pivot$total) * 100
+
+eff_pivot$category <- factor(eff_pivot$category, levels = c("core", "accessory", "singleton"))
+
+#ggstat plot
+gg_bar_eff <- ggbarstats(data = eff_unique, x = first, y = category) + labs(caption = NULL) 
+gg_bar_eff
+#make plot 
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+eff_plot <- ggplot(eff_pivot, aes(x=category, y=percent, fill =category)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+eff_plot
+
+#chi square test
+eff_test <- chisq.test(table(eff_unique$category, eff_unique$first))
+eff_test
+pairwise_prop_test(table(eff_unique$category, eff_unique$first), p.adjust.method = "BH")
+
+#Fisher's test
+fisher.test(table(eff_unique$category, eff_unique$first))
+fisher.multcomp(table(eff_unique$category, eff_unique$first))
+
+```
+
+Perform the same analysis for MEROPS
+```{r}
+merops_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/annotations.merops.txt", header=FALSE)
+merops_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/annotations.merops.txt", header=FALSE)
+merops_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/annotations.merops.txt", header=FALSE)
+merops_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/annotations.merops.txt", header=FALSE)
+merops_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/annotations.merops.txt", header=FALSE)
+merops_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/annotations.merops.txt", header=FALSE)
+
+#change name of column for merging
+names(merops_1801)[names(merops_1801) == "V1"] <- "id"
+names(merops_1802)[names(merops_1802) == "V1"] <- "id"
+names(merops_1803)[names(merops_1803) == "V1"] <- "id"
+names(merops_1806)[names(merops_1806) == "V1"] <- "id"
+names(merops_1807)[names(merops_1807) == "V1"] <- "id"
+names(merops_1808)[names(merops_1808) == "V1"] <- "id"
+merops_1801[ , 2:3] <- NULL
+merops_1802[ , 2:3] <- NULL
+merops_1803[ , 2:3] <- NULL
+merops_1806[ , 2:3] <- NULL
+merops_1807[ , 2:3] <- NULL
+merops_1808[ , 2:3] <- NULL
+
+merops <- "merops"
+merops_1801$merops_1 <- merops
+merops_1802$merops_2 <- merops
+merops_1803$merops_3 <- merops
+merops_1806$merops_6 <- merops
+merops_1807$merops_7 <- merops
+merops_1808$merops_8 <- merops
+
+merops_MAC <- merge(MAC_noref, merops_1801, by="id", all.x = TRUE)
+merops_MAC <- merge(merops_MAC, merops_1802, by="id", all.x = TRUE)
+merops_MAC <- merge(merops_MAC, merops_1803, by="id", all.x = TRUE)
+merops_MAC <- merge(merops_MAC, merops_1806, by="id", all.x = TRUE)
+merops_MAC <- merge(merops_MAC, merops_1807, by="id", all.x = TRUE)
+merops_MAC <- merge(merops_MAC, merops_1808, by="id", all.x = TRUE)
+
+merops_MAC$merops <- paste(merops_MAC$merops_1, "", merops_MAC$merops_2, "", merops_MAC$merops_3, "", merops_MAC$merops_6, "", merops_MAC$merops_7, "", merops_MAC$merops_8)
+merops_MAC[ , 4:9] <- NULL
+merops_MAC$merops<-gsub("NA","",as.character(merops_MAC$merops))
+merops_MAC$merops<-gsub(" ","",as.character(merops_MAC$merops))
+
+merops_MAC["merops"][merops_MAC["merops"] == ''] <- "None"
+
+#Remove protein id, and remove duplicate rows
+#Take the secreted category of each orthogroup depending on what occurs most often
+merops_MAC$id <- NULL
+
+merops_unique <- merops_MAC %>%
+  count(Orthogroup, category, merops, sort = TRUE) %>%
+  group_by(Orthogroup) %>%
+  summarise(first = merops[1], category = category[1])
+
+#the number of singletons has decreased, because we removed the reference from the analysis- everything else is the same
+merops_summary <- merops_unique %>% group_by(category, first) %>% tally()
+
+merops_total <- merops_summary %>% group_by(category) %>% 
+  summarise(n = sum(n))
+total <- "total"
+merops_total$first <- total
+
+merops_all <- rbind(merops_summary, merops_total)
+
+merops_pivot <- merops_all %>% pivot_wider(names_from = first, values_from = n)
+merops_pivot$percent <- (merops_pivot$merops/merops_pivot$total) * 100
+
+merops_pivot$category <- factor(merops_pivot$category, levels = c("core", "accessory", "singleton"))
+
+#ggstat plot
+gg_bar_merops <- ggbarstats(data = merops_unique, x = first, y = category) + labs(caption = NULL) 
+gg_bar_merops
+#make plot 
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+merops_plot <- ggplot(merops_pivot, aes(x=category, y=percent, fill =category)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+merops_plot
+
+#chi square test
+merops_test <- chisq.test(table(merops_unique$category, merops_unique$first))
+merops_test
+pairwise_prop_test(table(merops_unique$category, merops_unique$first), p.adjust.method = "BH")
+
+```
+
+
+Perform the same analysis for metabolite
+```{r}
+anti_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/annotations.antismash.clusters.txt", header=FALSE)
+anti_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/annotations.antismash.clusters.txt", header=FALSE)
+anti_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/annotations.antismash.clusters.txt", header=FALSE)
+anti_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/annotations.antismash.clusters.txt", header=FALSE)
+anti_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/annotations.antismash.clusters.txt", header=FALSE)
+anti_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/annotations.antismash.clusters.txt", header=FALSE)
+
+#change name of column for merging
+names(anti_1801)[names(anti_1801) == "V1"] <- "id"
+names(anti_1802)[names(anti_1802) == "V1"] <- "id"
+names(anti_1803)[names(anti_1803) == "V1"] <- "id"
+names(anti_1806)[names(anti_1806) == "V1"] <- "id"
+names(anti_1807)[names(anti_1807) == "V1"] <- "id"
+names(anti_1808)[names(anti_1808) == "V1"] <- "id"
+anti_1801[ , 2:3] <- NULL
+anti_1802[ , 2:3] <- NULL
+anti_1803[ , 2:3] <- NULL
+anti_1806[ , 2:3] <- NULL
+anti_1807[ , 2:3] <- NULL
+anti_1808[ , 2:3] <- NULL
+
+anti <- "anti"
+anti_1801$anti_1 <- anti
+anti_1802$anti_2 <- anti
+anti_1803$anti_3 <- anti
+anti_1806$anti_6 <- anti
+anti_1807$anti_7 <- anti
+anti_1808$anti_8 <- anti
+
+anti_MAC <- merge(MAC_noref, anti_1801, by="id", all.x = TRUE)
+anti_MAC <- merge(anti_MAC, anti_1802, by="id", all.x = TRUE)
+anti_MAC <- merge(anti_MAC, anti_1803, by="id", all.x = TRUE)
+anti_MAC <- merge(anti_MAC, anti_1806, by="id", all.x = TRUE)
+anti_MAC <- merge(anti_MAC, anti_1807, by="id", all.x = TRUE)
+anti_MAC <- merge(anti_MAC, anti_1808, by="id", all.x = TRUE)
+
+anti_MAC$anti <- paste(anti_MAC$anti_1, "", anti_MAC$anti_2, "", anti_MAC$anti_3, "", anti_MAC$anti_6, "", anti_MAC$anti_7, "", anti_MAC$anti_8)
+anti_MAC[ , 4:9] <- NULL
+anti_MAC$anti<-gsub("NA","",as.character(anti_MAC$anti))
+anti_MAC$anti<-gsub(" ","",as.character(anti_MAC$anti))
+
+anti_MAC["anti"][anti_MAC["anti"] == ''] <- "None"
+
+#Remove protein id, and remove duplicate rows
+#Take the secreted category of each orthogroup depending on what occurs most often
+anti_MAC$id <- NULL
+
+anti_unique <- anti_MAC %>%
+  count(Orthogroup, category, anti, sort = TRUE) %>%
+  group_by(Orthogroup) %>%
+  summarise(first = anti[1], category = category[1])
+
+#the number of singletons has decreased, because we removed the reference from the analysis- everything else is the same
+anti_summary <- anti_unique %>% group_by(category, first) %>% tally()
+
+anti_total <- anti_summary %>% group_by(category) %>% 
+  summarise(n = sum(n))
+total <- "total"
+anti_total$first <- total
+
+anti_all <- rbind(anti_summary, anti_total)
+
+anti_pivot <- anti_all %>% pivot_wider(names_from = first, values_from = n)
+anti_pivot$percent <- (anti_pivot$anti/anti_pivot$total) * 100
+
+anti_pivot$category <- factor(anti_pivot$category, levels = c("core", "accessory", "singleton"))
+
+#ggstat plot
+gg_bar_anti <- ggbarstats(data = anti_unique, x = first, y = category) + labs(caption = NULL) 
+gg_bar_anti
+#make plot 
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+anti_plot <- ggplot(anti_pivot, aes(x=category, y=percent, fill =category)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+anti_plot
+
+#chi square test
+anti_test <- chisq.test(table(anti_unique$category, anti_unique$first))
+anti_test
+pairwise_prop_test(table(anti_unique$category, anti_unique$first), p.adjust.method = "BH")
+
+```
+
+Conserved protein domains
+```{r}
+pfam_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/annotations.pfam.txt", header=FALSE)
+ipr_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/annotations.iprscan.txt", header=FALSE)
+pfam_1801[ , 2:3] <- NULL
+ipr_1801[ , 2:3] <- NULL
+con_1801 <- rbind(pfam_1801, ipr_1801)
+con_1801 <- distinct(con_1801, V1, .keep_all = TRUE)
+
+pfam_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/annotations.pfam.txt", header=FALSE)
+ipr_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/annotations.iprscan.txt", header=FALSE)
+pfam_1802[ , 2:3] <- NULL
+ipr_1802[ , 2:3] <- NULL
+con_1802 <- rbind(pfam_1802, ipr_1802)
+con_1802 <- distinct(con_1802, V1, .keep_all = TRUE)
+
+pfam_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/annotations.pfam.txt", header=FALSE)
+ipr_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/annotations.iprscan.txt", header=FALSE)
+pfam_1803[ , 2:3] <- NULL
+ipr_1803[ , 2:3] <- NULL
+con_1803 <- rbind(pfam_1803, ipr_1803)
+con_1803 <- distinct(con_1803, V1, .keep_all = TRUE)
+
+pfam_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/annotations.pfam.txt", header=FALSE)
+ipr_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/annotations.iprscan.txt", header=FALSE)
+pfam_1806[ , 2:3] <- NULL
+ipr_1806[ , 2:3] <- NULL
+con_1806 <- rbind(pfam_1806, ipr_1806)
+con_1806 <- distinct(con_1806, V1, .keep_all = TRUE)
+
+pfam_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/annotations.pfam.txt", header=FALSE)
+ipr_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/annotations.iprscan.txt", header=FALSE)
+pfam_1807[ , 2:3] <- NULL
+ipr_1807[ , 2:3] <- NULL
+con_1807 <- rbind(pfam_1807, ipr_1807)
+con_1807 <- distinct(con_1807, V1, .keep_all = TRUE)
+
+pfam_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/annotations.pfam.txt", header=FALSE)
+ipr_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/annotations.iprscan.txt", header=FALSE)
+pfam_1808[ , 2:3] <- NULL
+ipr_1808[ , 2:3] <- NULL
+con_1808 <- rbind(pfam_1808, ipr_1808)
+con_1808 <- distinct(con_1808, V1, .keep_all = TRUE)
+
+#conserved proteins
+con <- "con"
+con_1801$con_1 <- con
+con_1802$con_2 <- con
+con_1803$con_3 <- con
+con_1806$con_6 <- con
+con_1807$con_7 <- con
+con_1808$con_8 <- con
+
+names(con_1801)[names(con_1801) == "V1"] <- "id"
+names(con_1802)[names(con_1802) == "V1"] <- "id"
+names(con_1803)[names(con_1803) == "V1"] <- "id"
+names(con_1806)[names(con_1806) == "V1"] <- "id"
+names(con_1807)[names(con_1807) == "V1"] <- "id"
+names(con_1808)[names(con_1808) == "V1"] <- "id"
+
+con_MAC <- merge(MAC_noref, con_1801, by="id", all.x = TRUE)
+con_MAC <- merge(con_MAC, con_1802, by="id", all.x = TRUE)
+con_MAC <- merge(con_MAC, con_1803, by="id", all.x = TRUE)
+con_MAC <- merge(con_MAC, con_1806, by="id", all.x = TRUE)
+con_MAC <- merge(con_MAC, con_1807, by="id", all.x = TRUE)
+con_MAC <- merge(con_MAC, con_1808, by="id", all.x = TRUE)
+
+con_MAC$con <- paste(con_MAC$con_1, "", con_MAC$con_2, "", con_MAC$con_3, "", con_MAC$con_6, "", con_MAC$con_7, "", con_MAC$con_8)
+con_MAC[ , 4:9] <- NULL
+con_MAC$con<-gsub("NA","",as.character(con_MAC$con))
+con_MAC$con<-gsub(" ","",as.character(con_MAC$con))
+
+con_MAC["con"][con_MAC["con"] == ''] <- "None"
+
+#Remove protein id, and remove duplicate rows
+#Take the secreted category of each orthogroup depending on what occurs most often
+con_MAC$id <- NULL
+
+con_unique <- con_MAC %>%
+  count(Orthogroup, category, con, sort = TRUE) %>%
+  group_by(Orthogroup) %>%
+  summarise(first = con[1], category = category[1])
+
+#the number of singletons has decreased, because we removed the reference from the analysis- everything else is the same
+con_summary <- con_unique %>% group_by(category, first) %>% tally()
+
+con_total <- con_summary %>% group_by(category) %>% 
+  summarise(n = sum(n))
+total <- "total"
+con_total$first <- total
+
+con_all <- rbind(con_summary, con_total)
+
+con_pivot <- con_all %>% pivot_wider(names_from = first, values_from = n)
+con_pivot$percent <- (con_pivot$con/con_pivot$total) * 100
+
+con_pivot$category <- factor(con_pivot$category, levels = c("core", "accessory", "singleton"))
+
+#ggstat plot
+gg_bar_con <- ggbarstats(data = con_unique, x = first, y = category) + labs(caption = NULL) 
+gg_bar_con
+#make plot 
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+con_plot <- ggplot(con_pivot, aes(x=category, y=percent, fill =category)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+con_plot
+
+#chi square test
+con_test <- chisq.test(table(con_unique$category, con_unique$first))
+con_test
+pairwise_prop_test(table(con_unique$category, con_unique$first), p.adjust.method = "BH")
+```
+
+CAZYME
+```{r}
+caz_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/annotations.dbCAN.txt", header=FALSE)
+caz_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/annotations.dbCAN.txt", header=FALSE)
+caz_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/annotations.dbCAN.txt", header=FALSE)
+caz_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/annotations.dbCAN.txt", header=FALSE)
+caz_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/annotations.dbCAN.txt", header=FALSE)
+caz_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/annotations.dbCAN.txt", header=FALSE)
+
+#cazyme proteins
+caz_1801[ , 2:3] <- NULL
+caz_1802[ , 2:3] <- NULL
+caz_1803[ , 2:3] <- NULL
+caz_1806[ , 2:3] <- NULL
+caz_1807[ , 2:3] <- NULL
+caz_1808[ , 2:3] <- NULL
+
+caz <- "caz"
+caz_1801$caz_1 <- caz
+caz_1802$caz_2 <- caz
+caz_1803$caz_3 <- caz
+caz_1806$caz_6 <- caz
+caz_1807$caz_7 <- caz
+caz_1808$caz_8 <- caz
+
+names(caz_1801)[names(caz_1801) == "V1"] <- "id"
+names(caz_1802)[names(caz_1802) == "V1"] <- "id"
+names(caz_1803)[names(caz_1803) == "V1"] <- "id"
+names(caz_1806)[names(caz_1806) == "V1"] <- "id"
+names(caz_1807)[names(caz_1807) == "V1"] <- "id"
+names(caz_1808)[names(caz_1808) == "V1"] <- "id"
+
+caz_MAC <- merge(MAC_noref, caz_1801, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1802, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1803, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1806, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1807, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1808, by="id", all.x = TRUE)
+
+caz_MAC$caz <- paste(caz_MAC$caz_1, "", caz_MAC$caz_2, "", caz_MAC$caz_3, "", caz_MAC$caz_6, "", caz_MAC$caz_7, "", caz_MAC$caz_8)
+caz_MAC[ , 4:9] <- NULL
+caz_MAC$caz<-gsub("NA","",as.character(caz_MAC$caz))
+caz_MAC$caz<-gsub(" ","",as.character(caz_MAC$caz))
+
+caz_MAC["caz"][caz_MAC["caz"] == ''] <- "None"
+
+#Remove protein id, and remove duplicate rows
+#Take the secreted category of each orthogroup depending on what occurs most often
+caz_MAC$id <- NULL
+
+caz_unique <- caz_MAC %>%
+  count(Orthogroup, category, caz, sort = TRUE) %>%
+  group_by(Orthogroup) %>%
+  summarise(first = caz[1], category = category[1])
+
+#the number of singletons has decreased, because we removed the reference from the analysis- everything else is the same
+caz_summary <- caz_unique %>% group_by(category, first) %>% tally()
+
+caz_total <- caz_summary %>% group_by(category) %>% 
+  summarise(n = sum(n))
+total <- "total"
+caz_total$first <- total
+
+caz_all <- rbind(caz_summary, caz_total)
+
+caz_pivot <- caz_all %>% pivot_wider(names_from = first, values_from = n)
+caz_pivot$percent <- (caz_pivot$caz/caz_pivot$total) * 100
+
+caz_pivot$category <- factor(caz_pivot$category, levels = c("core", "accessory", "singleton"))
+
+#ggstat plot
+gg_bar_caz <- ggbarstats(data = caz_unique, x = first, y = category) + labs(caption = NULL) 
+gg_bar_caz
+#make plot 
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+caz_plot <- ggplot(caz_pivot, aes(x=category, y=percent, fill =category)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+caz_plot
+
+#chi square test
+caz_test <- chisq.test(table(caz_unique$category, caz_unique$first))
+caz_test
+pairwise_prop_test(table(caz_unique$category, caz_unique$first), p.adjust.method = "BH")
+
+#Fisher's test
+fisher.test(table(caz_unique$category, caz_unique$first))
+fisher.multcomp(table(caz_unique$category, caz_unique$first))
+```
+
+CAZYME components
+```{r}
+caz_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/annotations.dbCAN.txt", header=FALSE)
+caz_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/annotations.dbCAN.txt", header=FALSE)
+caz_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/annotations.dbCAN.txt", header=FALSE)
+caz_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/annotations.dbCAN.txt", header=FALSE)
+caz_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/annotations.dbCAN.txt", header=FALSE)
+caz_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/annotations.dbCAN.txt", header=FALSE)
+
+#cazyme proteins
+caz_1801[ , 2] <- NULL
+caz_1802[ , 2] <- NULL
+caz_1803[ , 2] <- NULL
+caz_1806[ , 2] <- NULL
+caz_1807[ , 2] <- NULL
+caz_1808[ , 2] <- NULL
+
+caz_1801$V3 <- substr(caz_1801$V3, 6, 7)
+caz_1802$V3 <- substr(caz_1802$V3, 6, 7)
+caz_1803$V3 <- substr(caz_1803$V3, 6, 7)
+caz_1806$V3 <- substr(caz_1806$V3, 6, 7)
+caz_1807$V3 <- substr(caz_1807$V3, 6, 7)
+caz_1808$V3 <- substr(caz_1808$V3, 6, 7)
+
+names(caz_1801)[names(caz_1801) == "V1"] <- "id"
+names(caz_1802)[names(caz_1802) == "V1"] <- "id"
+names(caz_1803)[names(caz_1803) == "V1"] <- "id"
+names(caz_1806)[names(caz_1806) == "V1"] <- "id"
+names(caz_1807)[names(caz_1807) == "V1"] <- "id"
+names(caz_1808)[names(caz_1808) == "V1"] <- "id"
+
+names(caz_1801)[names(caz_1801) == "V3"] <- "K1"
+names(caz_1802)[names(caz_1802) == "V3"] <- "K2"
+names(caz_1803)[names(caz_1803) == "V3"] <- "K3"
+names(caz_1806)[names(caz_1806) == "V3"] <- "K6"
+names(caz_1807)[names(caz_1807) == "V3"] <- "K7"
+names(caz_1808)[names(caz_1808) == "V3"] <- "K8"
+
+caz_MAC <- merge(MAC_noref, caz_1801, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1802, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1803, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1806, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1807, by="id", all.x = TRUE)
+caz_MAC <- merge(caz_MAC, caz_1808, by="id", all.x = TRUE)
+
+caz_MAC$caz <- paste(caz_MAC$K1, "", caz_MAC$K2, "", caz_MAC$K3, "", caz_MAC$K6, "", caz_MAC$K7, "", caz_MAC$K8)
+caz_MAC[ , 4:9] <- NULL
+caz_MAC$caz<-gsub("NA","",as.character(caz_MAC$caz))
+caz_MAC$caz<-gsub(" ","",as.character(caz_MAC$caz))
+
+caz_MAC <- caz_MAC[-which(caz_MAC$caz == ""), ]
+
+caz_unique <- caz_MAC %>%
+  count(Orthogroup, category, caz, sort = TRUE) %>%
+  group_by(Orthogroup) %>%
+  summarise(first = caz[1], category = category[1])
+
+caz_summary <- caz_unique %>% group_by(category, first) %>% tally()
+
+caz_summary$category <- factor(caz_summary$category, levels = c("core", "accessory", "singleton"))
+
+cols <- c("#B33C2C", "#C0B72D", "#47DB32", "#32DADB", "#324ADB", "#D632DB")
+
+caz_dist <- ggplot(caz_summary, aes(fill=first, y=n, x=category)) + 
+    geom_bar(position="fill", stat="identity") +
+    scale_fill_manual(values = cols) +
+    scale_y_reverse() +
+    theme_minimal()
+caz_dist
+```
+
+
+
+Transmembrane proteins
+```{r}
+#KVL_1801
+pho_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/KVL_1801_phobius.results.txt", header=FALSE)
+pho_1801_t <- pho_1801 %>% filter(V3 == "Y")
+pho_1801_s <- pho_1801 %>% filter(V2 > 0)
+pho_1801_t[ , 2:4] <- NULL
+pho_1801_s[ , 2:4] <- NULL
+
+tmhmm_1801 <- read.delim("/d01_KVL_data_subsets/KVL_1801/KVL_1801_tmhmm.results", header=FALSE)
+tmhmm_1801 <- separate(data = tmhmm_1801, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1801 <- tmhmm_1801 %>% filter(value > 0)
+tmhmm_1801[ , 2:7] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+tran_1801 <- rbind(pho_1801_t, tmhmm_1801)
+tran_1801 <- distinct(tran_1801, V1, .keep_all = TRUE)
+
+#KVL_1802
+pho_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/KVL_1802_phobius.results.txt", header=FALSE)
+pho_1802_t <- pho_1802 %>% filter(V3 == "Y")
+pho_1802_s <- pho_1802 %>% filter(V2 > 0)
+pho_1802_t[ , 2:4] <- NULL
+pho_1802_s[ , 2:4] <- NULL
+
+tmhmm_1802 <- read.delim("/d01_KVL_data_subsets/KVL_1802/KVL_1802_tmhmm.results", header=FALSE)
+tmhmm_1802 <- separate(data = tmhmm_1802, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1802 <- tmhmm_1802 %>% filter(value > 0)
+tmhmm_1802[ , 2:7] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+tran_1802 <- rbind(pho_1802_t, tmhmm_1802)
+tran_1802 <- distinct(tran_1802, V1, .keep_all = TRUE)
+
+#KVL_1803
+pho_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/KVL_1803_phobius.results.txt", header=FALSE)
+pho_1803_t <- pho_1803 %>% filter(V3 == "Y")
+pho_1803_s <- pho_1803 %>% filter(V2 > 0)
+pho_1803_t[ , 2:4] <- NULL
+pho_1803_s[ , 2:4] <- NULL
+
+tmhmm_1803 <- read.delim("/d01_KVL_data_subsets/KVL_1803/KVL_1803_tmhmm.results", header=FALSE)
+tmhmm_1803 <- separate(data = tmhmm_1803, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1803 <- tmhmm_1803 %>% filter(value > 0)
+tmhmm_1803[ , 2:7] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+tran_1803 <- rbind(pho_1803_t, tmhmm_1803)
+tran_1803 <- distinct(tran_1803, V1, .keep_all = TRUE)
+
+#KVL_1806
+pho_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/KVL_1806_phobius.results.txt", header=FALSE)
+pho_1806_t <- pho_1806 %>% filter(V3 == "Y")
+pho_1806_s <- pho_1806 %>% filter(V2 > 0)
+pho_1806_t[ , 2:4] <- NULL
+pho_1806_s[ , 2:4] <- NULL
+
+tmhmm_1806 <- read.delim("/d01_KVL_data_subsets/KVL_1806/KVL_1806_tmhmm.results", header=FALSE)
+tmhmm_1806 <- separate(data = tmhmm_1806, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1806 <- tmhmm_1806 %>% filter(value > 0)
+tmhmm_1806[ , 2:7] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+tran_1806 <- rbind(pho_1806_t, tmhmm_1806)
+tran_1806 <- distinct(tran_1806, V1, .keep_all = TRUE)
+
+#KVL_1807
+pho_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/KVL_1807_phobius.results.txt", header=FALSE)
+pho_1807_t <- pho_1807 %>% filter(V3 == "Y")
+pho_1807_s <- pho_1807 %>% filter(V2 > 0)
+pho_1807_t[ , 2:4] <- NULL
+pho_1807_s[ , 2:4] <- NULL
+
+tmhmm_1807 <- read.delim("/d01_KVL_data_subsets/KVL_1807/KVL_1807_tmhmm.results", header=FALSE)
+tmhmm_1807 <- separate(data = tmhmm_1807, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1807 <- tmhmm_1807 %>% filter(value > 0)
+tmhmm_1807[ , 2:7] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+tran_1807 <- rbind(pho_1807_t, tmhmm_1807)
+tran_1807 <- distinct(tran_1807, V1, .keep_all = TRUE)
+
+#KVL_1808
+pho_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/KVL_1808_phobius.results.txt", header=FALSE)
+pho_1808_t <- pho_1808 %>% filter(V3 == "Y")
+pho_1808_s <- pho_1808 %>% filter(V2 > 0)
+pho_1808_t[ , 2:4] <- NULL
+pho_1808_s[ , 2:4] <- NULL
+
+tmhmm_1808 <- read.delim("/d01_KVL_data_subsets/KVL_1808/KVL_1808_tmhmm.results", header=FALSE)
+tmhmm_1808 <- separate(data = tmhmm_1808, col = V5, into = c("pred", "value"), sep = "=")
+tmhmm_1808 <- tmhmm_1808 %>% filter(value > 0)
+tmhmm_1808[ , 2:7] <- NULL
+
+#combine results from funannotate secretome and phobius secreted proteins
+tran_1808 <- rbind(pho_1808_t, tmhmm_1808)
+tran_1808 <- distinct(tran_1808, V1, .keep_all = TRUE)
+
+#Analysis
+tran <- "tran"
+tran_1801$tran_1 <- tran
+tran_1802$tran_2 <- tran
+tran_1803$tran_3 <- tran
+tran_1806$tran_6 <- tran
+tran_1807$tran_7 <- tran
+tran_1808$tran_8 <- tran
+
+names(tran_1801)[names(tran_1801) == "V1"] <- "id"
+names(tran_1802)[names(tran_1802) == "V1"] <- "id"
+names(tran_1803)[names(tran_1803) == "V1"] <- "id"
+names(tran_1806)[names(tran_1806) == "V1"] <- "id"
+names(tran_1807)[names(tran_1807) == "V1"] <- "id"
+names(tran_1808)[names(tran_1808) == "V1"] <- "id"
+
+tran_MAC <- merge(MAC_noref, tran_1801, by="id", all.x = TRUE)
+tran_MAC <- merge(tran_MAC, tran_1802, by="id", all.x = TRUE)
+tran_MAC <- merge(tran_MAC, tran_1803, by="id", all.x = TRUE)
+tran_MAC <- merge(tran_MAC, tran_1806, by="id", all.x = TRUE)
+tran_MAC <- merge(tran_MAC, tran_1807, by="id", all.x = TRUE)
+tran_MAC <- merge(tran_MAC, tran_1808, by="id", all.x = TRUE)
+
+tran_MAC$tran <- paste(tran_MAC$tran_1, "", tran_MAC$tran_2, "", tran_MAC$tran_3, "", tran_MAC$tran_6, "", tran_MAC$tran_7, "", tran_MAC$tran_8)
+tran_MAC[ , 4:9] <- NULL
+tran_MAC$tran<-gsub("NA","",as.character(tran_MAC$tran))
+tran_MAC$tran<-gsub(" ","",as.character(tran_MAC$tran))
+
+tran_MAC["tran"][tran_MAC["tran"] == ''] <- "None"
+
+#Remove protein id, and remove duplicate rows
+#Take the secreted category of each orthogroup depending on what occurs most often
+tran_MAC$id <- NULL
+
+tran_unique <- tran_MAC %>%
+  count(Orthogroup, category, tran, sort = TRUE) %>%
+  group_by(Orthogroup) %>%
+  summarise(first = tran[1], category = category[1])
+
+#the number of singletons has decreased, because we removed the reference from the analysis- everything else is the same
+tran_summary <- tran_unique %>% group_by(category, first) %>% tally()
+
+tran_total <- tran_summary %>% group_by(category) %>% 
+  summarise(n = sum(n))
+total <- "total"
+tran_total$first <- total
+
+tran_all <- rbind(tran_summary, tran_total)
+
+tran_pivot <- tran_all %>% pivot_wider(names_from = first, values_from = n)
+tran_pivot$percent <- (tran_pivot$tran/tran_pivot$total) * 100
+
+tran_pivot$category <- factor(tran_pivot$category, levels = c("core", "accessory", "singleton"))
+
+#ggstat plot
+gg_bar_tran <- ggbarstats(data = tran_unique, x = first, y = category) + labs(caption = NULL) 
+gg_bar_tran
+#make plot 
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+tran_plot <- ggplot(tran_pivot, aes(x=category, y=percent, fill =category)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+tran_plot
+
+#chi square test
+tran_test <- chisq.test(table(tran_unique$category, tran_unique$first))
+tran_test
+pairwise_prop_test(table(tran_unique$category, tran_unique$first), p.adjust.method = "BH")
+
+#Fisher's test
+fisher.test(table(tran_unique$category, tran_unique$first))
+fisher.multcomp(table(tran_unique$category, tran_unique$first))
+
+```
+
+Find unclassified proteins
+
+```{r}
+
+all_prot <- rbind(anti_unique, tran_unique, sec_unique, eff_unique, con_unique, merops_unique, caz_unique)
+all_prot %>% group_by(first) %>% tally()
+label <- all_prot %>% filter(first != "None")
+label[, 2:3] <- NULL
+label <- distinct(label, Orthogroup, .keep_all = TRUE)
+value <- "og_ann"
+label$og_ann <- value
+
+MAC_noref <- all_MAC[!grepl("EF", all_MAC$id),]
+MAC_og_noref <- distinct(MAC_noref, Orthogroup, .keep_all = TRUE)
+MAC_og_noref[, 2:3] <- NULL
+
+no_ann_MAC <- merge(label, MAC_og_noref, by="Orthogroup", all.y = TRUE)
+no_ann_MAC$og_ann <- no_ann_MAC$og_ann %>% replace_na("none")
+
+empty_MAC <- merge(MAC_noref, no_ann_MAC, by="Orthogroup")
+empty_MAC$id <- NULL
+empty_MAC <- empty_MAC[!duplicated(empty_MAC), ]
+
+#create pivot table for graph
+empty_summary <- empty_MAC %>% group_by(category, og_ann) %>% tally()
+
+empty_total <- empty_summary %>% group_by(category) %>% 
+  summarise(n = sum(n))
+total <- "total"
+empty_total$first <- total
+names(empty_summary)[names(empty_summary) == "og_ann"] <- "first"
+
+empty_all <- rbind(empty_summary, empty_total)
+
+empty_pivot <- empty_all %>% pivot_wider(names_from = first, values_from = n)
+empty_pivot$percent <- (empty_pivot$none/empty_pivot$total) * 100
+
+empty_pivot$category <- factor(empty_pivot$category, levels = c("core", "accessory", "singleton"))
+
+#ggstatsplot
+gg_bar_empty <- ggbarstats(data = empty_MAC, x = og_ann, y = category) + labs(caption = NULL) 
+gg_bar_empty
+
+#make plot 
+cols_2 <- c("#ff9d9d", "#ff0000", "#8b0000")
+
+empty_plot <- ggplot(empty_pivot, aes(x=category, y=percent, fill =category)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+    scale_fill_manual(values = cols_2) +
+    theme(legend.position="none") +
+    theme_minimal()
+empty_plot
+
+#chi square test
+empty_test <- chisq.test(table(empty_MAC$category, empty_MAC$og_ann))
+empty_test
+pairwise_prop_test(table(empty_MAC$category, empty_MAC$og_ann), p.adjust.method = "BH")
+
+#Fisher's test
+fisher.test(table(empty_MAC$category, empty_MAC$og_ann))
+fisher.multcomp(table(empty_MAC$category, empty_MAC$og_ann))
+```
