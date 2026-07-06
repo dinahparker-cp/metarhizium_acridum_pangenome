@@ -77,7 +77,7 @@ All scripts used for figure generation are included in Github. All data can be f
    
 **Figure 6**
 
-1. **r01_figu_6.Rmd** <br />
+1. **r01_fig_6.Rmd** <br />
    R script to generate accessory chromosome distributoin plots, to understand the functions that exist on the accessory chromosome. <br />
    The data required to run this script is:
    - d02_Orthogroups.tsv (from Figure_2 datafiles)
