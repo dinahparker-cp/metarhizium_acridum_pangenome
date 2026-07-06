@@ -9,17 +9,32 @@ This is the ERDA (data repository host by the University of Copenhagen) sharelin
 **Figure 1**
 
 1. **r01_map_pangenome_Fig1a.R** <br />
-   R script to generate map showcasing the distribution of isolates used in the pangenome study of _M. acridum_. <br />
+   R script to generate map showcasing the distribution of isolates used in the pangenome study of _M. acridum_, Fig 1a. <br />
    The data required to run this script is:
-   - d01a_acridum_map_pg_metadata.xlsx
+   - d01a_acridum_map_pg_metadata.xlsx 
 
 2. **r02_table_formattable_Fig1b.R** <br />
-   R script to generate table showcasing details of genome assemblies and other relevant genome information. <br />
+   R script to generate table showcasing details of genome assemblies and other relevant genome information, Fig 1b. <br />
    The data required to run this script is:
    - d02a_table_genome_info.txt
 
 
 **Figure 2**
+
+1. **r01_link_to_genespace_Fig2a.txt** <br />
+   Link to evernote describing the methods used to generate the GENESPACE gene synteny file, Fig 2a. <br />
+   The data required to run this script is:
+   - d01_genespace.zip
+
+2. **r02_finding_orthogroups_2026.R** <br />
+   R script to generate circular plot of core and accessory genes of all _Metarhizium_ isolates, Fig 2b. <br />
+   The data required to run this script is:
+   - d02_Orthogroups.tsv
+   - d03_Orthogroups_UnassignedGenes.tsv
+   - d04_ortho_detail_2.txt
+   - d05_orthogroup_info_2.txt
+   - d06_summary_table_s8.txt
+     
 
 **Figure 3**
 
