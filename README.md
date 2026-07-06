@@ -1,7 +1,7 @@
 # _Metarhizium acridum_ pangenome
 This repository hosts data and R code for Parker DM., Wilson AM., Nogueira C., Nielsen KN., Hansen LH., Nielsen TK., Habig M., De Fine Licht HH. Genome compartmentalization in a host-specific fungal insect pathogen reveals a putative mating type locus on an accessory chromosome. bioRxiv preprint 2025.08.27.672719. <br />
 
-This is the ERDA (data repository host by the University of Copenhagen) sharelink that contains all scripts (also included on this Github) and additional processed data from outputs of specified programs for figure generation. 
+All scripts used for figure generation are included in Github. All data can be found on the linked ERDA (data repository host by the University of Copenhagen) sharelink that contains all scripts (also included on this Github) and additional processed data from outputs of specified programs for figure generation, details of which can be found in the manuscript. 
 [ERDA data repository] (https://sid.erda.dk/cgi-sid/ls.py?share_id=G4eUxX0bO8) <br />
 
 ## DATA & FILE OVERVIEW
