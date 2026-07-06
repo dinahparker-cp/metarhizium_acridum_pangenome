@@ -54,4 +54,34 @@ This is the ERDA (data repository host by the University of Copenhagen) sharelin
 
 **Figure 5**
 
+1. **script_shinyCircos_140426.R** <br />
+   R script to generate circos plot shocasing mapping of reads to indicate accessory chromosome present on ARSEF 3391, Fig 5a. Additional information can be found in README_circos_plots.txt regarding generation of input files. <br />
+   The data required to run this script is:
+   - ARSEF_3391_GenomeCoord_10contigs.csv
+   - KVL1801_on_KVL1801.regions_10contigs_logtrans.bed
+   - KVL1802_on_KVL1801.regions_10contig_logtrans.bed
+   - KVL1803_on_KVL1801.regions_10contigs_logtrans.bed.txt
+   - KVL1806_on_KVL1801.regions_10contigs_logtrans.bed.txt
+   - KVL1807_on_KVL1801.regions_10contigs_logtrans.bed.txt
+   - KVL1808_on_KVL1801.regions_10contigs_logtrans.bed.txt
+   - TE_windows_ARSEF3391.bed.txt
+  
+     
+2. **R_script_karyotype_plot_170325.R** <br />
+   R script to generate karyotype information regarding gene density vs. repeat density for ARSEF 3391, Fig 5d.  <br />
+   The data required to run this script is:
+   - GeneVsRepeat_plot.xlsx
+   - Ma3391_geneLenght.txt
+   - Macridum.filteredRepeats.bed
+   - Macridum.filteredRepeats.gff
+   
 **Figure 6**
+
+1. **r01_figu_6.Rmd** <br />
+   R script to generate accessory chromosome distributoin plots, to understand the functions that exist on the accessory chromosome. <br />
+   The data required to run this script is:
+   - d02_Orthogroups.tsv (from Figure_2 datafiles)
+   - d03_Orthogroups_UnassignedGenes.tsv (from Figure_2 datafiles)
+   - d01_Metarhizium_acridum_KVL_1801_H324.gff3
+  
+
