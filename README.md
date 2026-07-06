@@ -9,7 +9,7 @@ This is the ERDA (data repository host by the University of Copenhagen) sharelin
 **Figure 1**
 
 1. **r01_map_pangenome_Fig1a.R** <br />
-   R script to generate map showcasing the distribution of isolates used in the pangenome study of _ _M. acridum_ _. <br />
+   R script to generate map showcasing the distribution of isolates used in the pangenome study of _M. acridum_. <br />
    The data required to run this script is:
    - d01a_acridum_map_pg_metadata.xlsx
 
