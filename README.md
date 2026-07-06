@@ -84,4 +84,7 @@ This is the ERDA (data repository host by the University of Copenhagen) sharelin
    - d03_Orthogroups_UnassignedGenes.tsv (from Figure_2 datafiles)
    - d01_Metarhizium_acridum_KVL_1801_H324.gff3
   
+## METHODOLOGICAL INFORMATION
 
+1. Methods for processing the data: R. Only processed data downstream of programs specified in the article is included in this Github repository, to explain figure generation.
+2. People involved with data formatting and analysis: Dinah Parker, Henrik H. De Fine Licht (please contact dinahmparker@gmail.com for questions regarding data or scripts). 
